@@ -1,0 +1,44 @@
+name: Generate & Publish APK to GitHub Release
+
+on:
+  push:
+    # Déclenche l'action uniquement quand un tag commençant par 'v' est poussé
+    tags:
+      - 'v*'
+
+# Donne les droits au robot GitHub pour créer une Release
+permissions:
+  contents: write
+
+jobs:
+  build_and_release:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      - name: Configuration de Java (JDK 17)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Donner les permissions d'exécution à Gradle
+        run: chmod +x ./gradlew
+
+      # On utilise assembleDebug car il génère un APK pré-signé avec 
+      # une clé de débogage qui peut être installé directement par n'importe qui.
+      # (Un assembleRelease sans clé de signature complexe produirait un APK non installable).
+      - name: Build de l'APK
+        run: ./gradlew assembleDebug
+
+      - name: Renommer l'APK pour la release
+        run: mv app/build/outputs/apk/debug/app-debug.apk Valoria-${{ github.ref_name }}.apk
+
+      - name: Créer la Release GitHub et uploader l'APK
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Valoria-${{ github.ref_name }}.apk
+          generate_release_notes: true
