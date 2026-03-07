@@ -72,6 +72,8 @@ class PortfolioViewModel @Inject constructor(
     fun refresh() {
         _uiState.update { it.copy(isRefreshing = true) }
         repository.requestRefresh()
+        // Forcer aussi le rechargement depuis le fichier cloud si configuré
+        autoLoadFromFolder(silent = false)
     }
 
     // ── CRUD transactions/actifs ─────────────────────────────────
@@ -201,8 +203,9 @@ class PortfolioViewModel @Inject constructor(
     /**
      * Charge le JSON depuis le dossier de sync si disponible.
      * Appelé au démarrage depuis MainActivity après avoir défini le dossier.
+     * @param silent Si vrai, ne pas afficher de message d'erreur/succès (utilisé pour le sync auto)
      */
-    fun autoLoadFromFolder() {
+    fun autoLoadFromFolder(silent: Boolean = true) {
         val folderUri = syncFolderUri ?: return
         viewModelScope.launch {
             try {
@@ -216,7 +219,14 @@ class PortfolioViewModel @Inject constructor(
 
                 // Import en synchronisation au démarrage : on remplace le contenu local par le JSON (qui est le master)
                 if (json.contains("\"transactions\"")) {
-                    repository.importFromJson(json, clearExisting = true)
+                    val result = repository.importFromJson(json, clearExisting = true)
+                    if (!silent) {
+                        val msg = when (result) {
+                            is PortfolioRepository.ImportResult.Success -> "✅ Sync réussie (fichier cloud)"
+                            is PortfolioRepository.ImportResult.Error -> "❌ Échec sync : ${result.message}"
+                        }
+                        _uiState.update { it.copy(importMessage = msg) }
+                    }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()

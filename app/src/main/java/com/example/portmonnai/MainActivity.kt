@@ -24,14 +24,27 @@ import com.example.portmonnai.ui.theme.PortMonnaiTheme
 import com.example.portmonnai.ui.viewmodel.PortfolioViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    private val incomingUri = MutableStateFlow<Uri?>(null)
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent?.data?.let { incomingUri.value = it }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        intent?.data?.let { incomingUri.value = it }
 
         val prefs = getSharedPreferences("portmonnai_prefs", Context.MODE_PRIVATE)
 
@@ -59,21 +72,20 @@ class MainActivity : ComponentActivity() {
                     }
 
                     // Interception d'un fichier .val ouvert depuis l'explorateur de fichiers Android
-                    LaunchedEffect(intent) {
-                        if (intent?.action == Intent.ACTION_VIEW) {
-                            intent.data?.let { uri ->
-                                try {
-                                    val json = contentResolver.openInputStream(uri)?.use { stream ->
-                                        stream.readBytes().toString(Charsets.UTF_8)
-                                    }
-                                    if (json != null) {
-                                        viewModel.importFromJson(json)
-                                        // On réinitialise l'intent pour ne pas recharger à chaque rotation d'écran
-                                        setIntent(Intent())
-                                    }
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
+                    val currentIncomingUri by incomingUri.asStateFlow().collectAsState()
+                    LaunchedEffect(currentIncomingUri) {
+                        currentIncomingUri?.let { uri ->
+                            try {
+                                val json = contentResolver.openInputStream(uri)?.use { stream ->
+                                    stream.readBytes().toString(Charsets.UTF_8)
                                 }
+                                if (json != null) {
+                                    viewModel.importFromJson(json)
+                                    // On vide l'URI pour ne pas recharger à chaque recomposition
+                                    incomingUri.value = null
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
                             }
                         }
                     }
