@@ -65,6 +65,12 @@ interface PortfolioDao {
 
     @Query("DELETE FROM assets WHERE id = :assetId")
     suspend fun deleteAsset(assetId: String)
+
+    @Query("DELETE FROM assets")
+    suspend fun deleteAllAssets()
+
+    @Query("DELETE FROM transactions")
+    suspend fun deleteAllTransactions()
 }
 
 @Database(entities = [AssetEntity::class, TransactionEntity::class], version = 1)

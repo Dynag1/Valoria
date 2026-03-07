@@ -209,8 +209,10 @@ class PortfolioViewModel @Inject constructor(
                     stream.readBytes().toString(Charsets.UTF_8)
                 } ?: return@launch
 
-                // Import silencieux au démarrage
-                repository.importFromJson(json)
+                // Import en synchronisation au démarrage : on remplace le contenu local par le JSON (qui est le master)
+                if (json.contains("\"transactions\"")) {
+                    repository.importFromJson(json, clearExisting = true)
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }

@@ -411,7 +411,7 @@ class PortfolioRepository @Inject constructor(
         return com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(exportData)
     }
 
-    suspend fun importFromJson(json: String): ImportResult {
+    suspend fun importFromJson(json: String, clearExisting: Boolean = false): ImportResult {
         return try {
             val gson = com.google.gson.Gson()
             @Suppress("UNCHECKED_CAST")
@@ -421,6 +421,12 @@ class PortfolioRepository @Inject constructor(
             val assetsList = data["assets"] as? List<Map<String, Any>> ?: emptyList()
             @Suppress("UNCHECKED_CAST")
             val transactionsList = data["transactions"] as? List<Map<String, Any>> ?: emptyList()
+
+            // Nettoyage complet si c'est une synchronisation (évite les doublons et transactions fantômes)
+            if (clearExisting) {
+                portfolioDao.deleteAllTransactions()
+                portfolioDao.deleteAllAssets()
+            }
 
             var importedAssets = 0
             var importedTransactions = 0
@@ -440,8 +446,11 @@ class PortfolioRepository @Inject constructor(
             for (t in transactionsList) {
                 try {
                     val idDouble = (t["id"] as? Double) ?: 0.0
+                    // On conserve l'identifiant pour ne pas casser la base si on vide et recrée
+                    val txId = if (clearExisting && idDouble > 0) idDouble.toLong() else 0L
+
                     portfolioDao.insertTransaction(TransactionEntity(
-                        id = 0, // auto-generate new ID to avoid conflicts
+                        id = txId,
                         assetId = t["assetId"] as String,
                         type = TransactionType.valueOf(t["type"] as String),
                         quantity = (t["quantity"] as Double),
