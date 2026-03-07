@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Valoria</string>
+    <string name="portfolio">Portfolio</string>
+    <string name="assets">Actifs</string>
+    <string name="transactions">Transactions</string>
+    <string name="add_transaction">Ajouter une transaction</string>
+    <string name="buy">Achat</string>
+    <string name="sell">Vente</string>
+</resources>
