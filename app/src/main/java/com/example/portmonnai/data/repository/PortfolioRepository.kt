@@ -22,22 +22,37 @@ private val METAL_TICKERS = mapOf(
     "silver_bar" to "XAGEUR=X"
 )
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @Singleton
 class PortfolioRepository @Inject constructor(
     private val portfolioDao: PortfolioDao,
     private val coinGeckoApi: CoinGeckoApi,
     private val yahooFinanceApi: com.example.portmonnai.data.remote.YahooFinanceApi
 ) {
+    private val refreshTrigger = MutableSharedFlow<Unit>(replay = 1).apply { tryEmit(Unit) }
+
+    fun requestRefresh() {
+        refreshTrigger.tryEmit(Unit)
+    }
+
     fun getPortfolioAssets(): Flow<List<PortfolioAsset>> {
-        return combine(
-            portfolioDao.getAllAssets(),
-            portfolioDao.getAllTransactions(),
+        val pricesFlow = refreshTrigger.flatMapLatest {
             flow {
                 while (true) {
-                    emit(fetchCurrentPrices())
+                    try {
+                        emit(fetchCurrentPrices())
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
                     kotlinx.coroutines.delay(60000)
                 }
             }
+        }
+
+        return combine(
+            portfolioDao.getAllAssets(),
+            portfolioDao.getAllTransactions(),
+            pricesFlow
         ) { assets, transactions, prices ->
             assets.map { entity ->
                 val assetTransactions = transactions.filter { it.assetId == entity.id }

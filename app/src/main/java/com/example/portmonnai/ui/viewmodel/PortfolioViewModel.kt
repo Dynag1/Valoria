@@ -13,6 +13,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import javax.inject.Inject
 
 private const val BACKUP_FILENAME = "valoria_backup.val"
@@ -29,6 +30,8 @@ class PortfolioViewModel @Inject constructor(
     // URI du dossier de synchronisation (optionnel)
     private var syncFolderUri: Uri? = null
 
+    private var portfolioJob: Job? = null
+
     init {
         loadPortfolio()
     }
@@ -40,7 +43,8 @@ class PortfolioViewModel @Inject constructor(
 
     /** Charge le portefeuille depuis la base locale + auto-import depuis dossier sync au premier démarrage */
     private fun loadPortfolio() {
-        repository.getPortfolioAssets()
+        portfolioJob?.cancel()
+        portfolioJob = repository.getPortfolioAssets()
             .onStart { _uiState.update { it.copy(isLoading = true) } }
             .onEach { assets ->
                 val totalValue = assets.sumOf { it.totalValue }
@@ -67,7 +71,7 @@ class PortfolioViewModel @Inject constructor(
 
     fun refresh() {
         _uiState.update { it.copy(isRefreshing = true) }
-        loadPortfolio()
+        repository.requestRefresh()
     }
 
     // ── CRUD transactions/actifs ─────────────────────────────────
