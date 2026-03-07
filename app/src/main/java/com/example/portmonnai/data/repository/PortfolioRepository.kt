@@ -29,6 +29,7 @@ class PortfolioRepository @Inject constructor(
     private val coinGeckoApi: CoinGeckoApi,
     private val yahooFinanceApi: com.example.portmonnai.data.remote.YahooFinanceApi
 ) {
+    private val cachedPrices = mutableMapOf<String, PriceData>()
     private val refreshTrigger = MutableSharedFlow<Unit>(replay = 1).apply { tryEmit(Unit) }
 
     fun requestRefresh() {
@@ -123,10 +124,11 @@ class PortfolioRepository @Inject constructor(
         val result = mutableMapOf<String, PriceData>()
 
         // 1. Fetch EUR/USD rate
-        var usdEurRate = 1.10
+        var usdEurRate = 1.08 // Fallback raisonnable
         try {
             val eurUsdResponse = yahooFinanceApi.getChartData("EURUSD=X")
-            usdEurRate = eurUsdResponse.chart.result?.firstOrNull()?.meta?.regularMarketPrice ?: 1.10
+            val price = eurUsdResponse.chart.result?.firstOrNull()?.meta?.regularMarketPrice
+            if (price != null && price > 0) usdEurRate = price
         } catch (e: Exception) { e.printStackTrace() }
 
         // 2. Fetch cryptos from CoinGecko
@@ -148,41 +150,78 @@ class PortfolioRepository @Inject constructor(
             }
         } catch (e: Exception) { e.printStackTrace() }
 
-        // 3. Fetch metals via Yahoo Finance (prix spot or/argent)
+        // 3. Fetch metals
         var goldSpotEur = 0.0
         var goldChange24h = 0.0
+        
+        // Try Yahoo Spot XAUEUR=X
         try {
             val goldResp = yahooFinanceApi.getChartData("XAUEUR=X")
             val goldMeta = goldResp.chart.result?.firstOrNull()?.meta
-            if (goldMeta != null && !goldMeta.regularMarketPrice.isNaN()) {
+            if (goldMeta != null && goldMeta.regularMarketPrice > 0) {
                 goldSpotEur = goldMeta.regularMarketPrice
                 val prevClose = goldMeta.chartPreviousClose
                 goldChange24h = if (prevClose > 0) ((goldSpotEur - prevClose) / prevClose) * 100 else 0.0
             }
-        } catch (e: Exception) {
-            // Fallback: utilise PAX Gold (CoinGecko)
-            val paxGoldPrice = result["pax-gold"]?.price ?: 0.0
-            if (paxGoldPrice > 0) goldSpotEur = paxGoldPrice
+        } catch (e: Exception) { e.printStackTrace() }
+
+        // Try Yahoo Futures GC=F (USD) if spot failed
+        if (goldSpotEur <= 0.0) {
+            try {
+                val goldResp = yahooFinanceApi.getChartData("GC=F")
+                val goldMeta = goldResp.chart.result?.firstOrNull()?.meta
+                if (goldMeta != null && goldMeta.regularMarketPrice > 0) {
+                    goldSpotEur = goldMeta.regularMarketPrice / usdEurRate
+                    val prevClose = goldMeta.chartPreviousClose
+                    goldChange24h = if (prevClose > 0) ((goldMeta.regularMarketPrice - prevClose) / prevClose) * 100 else 0.0
+                }
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+
+        // Final Fallback: CoinGecko PAX Gold
+        if (goldSpotEur <= 0.0) {
+            val paxGoldData = result["pax-gold"]
+            if (paxGoldData != null && paxGoldData.price > 0) {
+                goldSpotEur = paxGoldData.price
+                goldChange24h = paxGoldData.change24h
+            }
         }
 
         if (goldSpotEur > 0) {
             val gramPrice = goldSpotEur / 31.1035
             result["gold_bar"] = PriceData(gramPrice, goldChange24h)
             result["gold_ingot"] = PriceData(gramPrice, goldChange24h)
-            // Napoléon 20Fr = 5.806g d'or fin
             result["gold_coin_napoleon"] = PriceData(gramPrice * 5.806, goldChange24h)
         }
 
+        // Silver
+        var silverSpotEur = 0.0
+        var silverChange24h = 0.0
         try {
             val silverResp = yahooFinanceApi.getChartData("XAGEUR=X")
             val silverMeta = silverResp.chart.result?.firstOrNull()?.meta
-            if (silverMeta != null && !silverMeta.regularMarketPrice.isNaN()) {
-                val silverSpot = silverMeta.regularMarketPrice
+            if (silverMeta != null && silverMeta.regularMarketPrice > 0) {
+                silverSpotEur = silverMeta.regularMarketPrice
                 val prevClose = silverMeta.chartPreviousClose
-                val silverChange = if (prevClose > 0) ((silverSpot - prevClose) / prevClose) * 100 else 0.0
-                result["silver_bar"] = PriceData(silverSpot / 31.1035, silverChange)
+                silverChange24h = if (prevClose > 0) ((silverSpotEur - prevClose) / prevClose) * 100 else 0.0
             }
         } catch (e: Exception) { e.printStackTrace() }
+
+        if (silverSpotEur <= 0.0) {
+            try {
+                val silverResp = yahooFinanceApi.getChartData("SI=F")
+                val silverMeta = silverResp.chart.result?.firstOrNull()?.meta
+                if (silverMeta != null && silverMeta.regularMarketPrice > 0) {
+                    silverSpotEur = silverMeta.regularMarketPrice / usdEurRate
+                    val prevClose = silverMeta.chartPreviousClose
+                    silverChange24h = if (prevClose > 0) ((silverMeta.regularMarketPrice - prevClose) / prevClose) * 100 else 0.0
+                }
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+
+        if (silverSpotEur > 0) {
+            result["silver_bar"] = PriceData(silverSpotEur / 31.1035, silverChange24h)
+        }
 
         // 4. Fetch stocks/ETFs via Yahoo Finance en utilisant directement le symbole de l'actif
         //    Le symbole stocké en base EST le ticker Yahoo (ex: HO.PA, CW8.PA, AAPL, etc.)
@@ -209,6 +248,20 @@ class PortfolioRepository @Inject constructor(
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+            }
+        }
+
+        // 5. Update cache and return merged results
+        result.forEach { (id, data) ->
+            if (data.price > 0) {
+                cachedPrices[id] = data
+            }
+        }
+        
+        // Merge with cache for missing items
+        cachedPrices.forEach { (id, data) ->
+            if (!result.containsKey(id)) {
+                result[id] = data
             }
         }
 
