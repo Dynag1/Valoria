@@ -41,40 +41,59 @@ class PortfolioRepository @Inject constructor(
         ) { assets, transactions, prices ->
             assets.map { entity ->
                 val assetTransactions = transactions.filter { it.assetId == entity.id }
-                val totalQty = assetTransactions.sumOf {
-                    if (it.type == TransactionType.BUY) it.quantity else -it.quantity
-                }
-                val totalCost = assetTransactions.filter { it.type == TransactionType.BUY }
-                    .sumOf { it.quantity * it.priceAtDate + it.fees }
-                val totalRevenue = assetTransactions.filter { it.type == TransactionType.SELL }
-                    .sumOf { it.quantity * it.priceAtDate - it.fees }
+                var currentQty = 0.0
+                var totalCostBasis = 0.0
+                var realizedProfit = 0.0
 
-                // Montant réel investi (de sa poche)
-                val netInvested = totalCost - totalRevenue
+                // Traitement chronologique des transactions pour un PRU (Prix de Revient Unitaire) exact
+                for (tx in assetTransactions.sortedBy { it.date }) {
+                    if (tx.type == TransactionType.BUY) {
+                        currentQty += tx.quantity
+                        totalCostBasis += (tx.quantity * tx.priceAtDate) + tx.fees
+                    } else if (tx.type == TransactionType.SELL) {
+                        // Le PRU au moment de la vente
+                        val currentPru = if (currentQty > 0) totalCostBasis / currentQty else 0.0
+                        // Le coût de ce qui est vendu part du CostBasis
+                        val costOfSold = tx.quantity * currentPru
+                        totalCostBasis -= costOfSold
+                        if (totalCostBasis < 0) totalCostBasis = 0.0
+                        
+                        currentQty -= tx.quantity
+                        
+                        // Plus-value réalisée sur cette vente : (Prix vente - PRU) - frais
+                        val revenue = (tx.quantity * tx.priceAtDate) - tx.fees
+                        realizedProfit += (revenue - costOfSold)
+                    }
+                }
+
+                // PRU moyen actuel des actifs restants
+                val avgPrice = if (currentQty > 0) totalCostBasis / currentQty else 0.0
 
                 val priceData = prices[entity.id]
                 val currentPrice = priceData?.price ?: 0.0
                 
-                val totalValue = totalQty * currentPrice
+                val totalValue = currentQty * currentPrice
                 
-                // Plus-value = Valeur Actuelle - Investissement Net
-                val profit = totalValue - netInvested
+                // Plus-value latente (sur ce que l'on possède encore) = Valeur actuelle - Coût de revient actuel
+                val unrealizedProfit = totalValue - totalCostBasis
                 
-                // Le % de gain par rapport au montant net investi (ou au coût originel si on a retiré sa mise initiale)
-                val profitPct = if (netInvested > 0) (profit / netInvested) * 100.0 else if (totalCost > 0) (profit / totalCost) * 100.0 else 0.0
+                // Bénéfice total = Gains encaissés (Ventes) + Gains virtuels (Actuels)
+                val totalProfit = realizedProfit + unrealizedProfit
                 
-                // Pour l'affichage "Prix moyen d'achat", on affiche l'équivalent du "coût net par unité restante"
-                val avgPrice = if (totalQty > 0 && netInvested > 0) netInvested / totalQty else 0.0
+                // % de bénéfice (basé sur le total réellement dépensé pour acheter ces actifs)
+                val totalAllTimeCost = assetTransactions.filter { it.type == TransactionType.BUY }
+                    .sumOf { it.quantity * it.priceAtDate + it.fees }
+                val profitPct = if (totalAllTimeCost > 0) (totalProfit / totalAllTimeCost) * 100.0 else 0.0
 
                 val change24h = priceData?.change24h ?: 0.0
                 val profitToday = totalValue * (change24h / 100)
 
                 PortfolioAsset(
                     asset = Asset(entity.id, entity.name, entity.symbol, entity.type, currentPrice, change24h),
-                    totalQuantity = totalQty,
+                    totalQuantity = currentQty,
                     averageBuyPrice = avgPrice,
                     totalValue = totalValue,
-                    totalProfit = profit,
+                    totalProfit = totalProfit,
                     profitPercentage = profitPct,
                     profitToday = profitToday,
                     profitTodayPercentage = change24h
