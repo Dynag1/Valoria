@@ -180,8 +180,9 @@ class PortfolioViewModel @Inject constructor(
             val folder = DocumentFile.fromTreeUri(appContext, folderUri) ?: return
 
             // Cherche le fichier existant ou le crée
+            // On utilise octet-stream pour éviter qu'Android n'ajoute ".json" à la fin du nom
             val file = folder.findFile(BACKUP_FILENAME)
-                ?: folder.createFile("application/json", BACKUP_FILENAME)
+                ?: folder.createFile("application/octet-stream", BACKUP_FILENAME)
                 ?: return
 
             appContext.contentResolver.openOutputStream(file.uri, "wt")?.use { stream ->
