@@ -36,7 +36,7 @@ data class TransactionEntity(
 
 @Dao
 interface PortfolioDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAsset(asset: AssetEntity)
 
     @Insert
