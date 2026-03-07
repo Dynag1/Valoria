@@ -216,49 +216,51 @@ class PortfolioRepository @Inject constructor(
             val period2 = System.currentTimeMillis() / 1000L
             val daysDiff = ((System.currentTimeMillis() - firstBuyDateMs) / (1000 * 60 * 60 * 24)).coerceAtLeast(1)
 
-            if (type == AssetType.CRYPTO) {
-                // Sauf pour PAX Gold, on passe par CoinGecko
-                if (assetId == "pax-gold") {
-                    // fallthrough to Yahoo logic if we use Yahoo ticker? No, pact gold is CG.
+            val isMetal = type in listOf(AssetType.GOLD_BAR, AssetType.GOLD_INGOT, AssetType.GOLD_COIN, AssetType.METAL)
+
+            if (type == AssetType.CRYPTO || isMetal) {
+                // Pour l'or physique, on requête "pax-gold" (qui réplique 1 once d'or équivalent à l'évolution de l'or), pour l'argent "kinesis-silver"
+                val cgId = when {
+                    isMetal && assetId.contains("silver") -> "kinesis-silver"
+                    isMetal -> "pax-gold"
+                    assetId == "pax-gold" -> "pax-gold"
+                    else -> assetId
                 }
-                val cgId = if (assetId == "pax-gold") "pax-gold" else assetId
+                
                 val response = coinGeckoApi.getMarketChart(cgId, "eur", if (daysDiff > 90) "max" else daysDiff.toString())
+                
+                val multiplier = when (assetId) {
+                    "gold_bar", "gold_ingot" -> 1.0 / 31.1035
+                    "gold_coin_napoleon" -> (1.0 / 31.1035) * 5.806
+                    "silver_bar" -> 1.0 / 31.1035
+                    else -> 1.0
+                }
+
                 response.prices?.forEach { point ->
                     if (point.size >= 2) {
                         val timestamp = point[0].toLong()
                         if (timestamp >= firstBuyDateMs) {
-                            result.add(Pair(timestamp, point[1]))
+                            result.add(Pair(timestamp, point[1] * multiplier))
                         }
                     }
                 }
             } else {
-                // Actions, ETFs, ou métaux (Yahoo Finance)
-                val yahooTicker = when (assetId) {
-                    "gold_bar", "gold_ingot", "gold_coin_napoleon" -> "XAUEUR=X"
-                    "silver_bar" -> "XAGEUR=X"
-                    else -> symbol
-                }
+                // Actions, ETFs (Yahoo Finance)
+                val yahooTicker = symbol // Le Ticker Yahoo est directement stocké dans le symbol (ex: CW8.PA)
+                
                 // Si intervalle très long, on peut changer l'intervalle pour 1wk ou 1mo pour éviter les payload trop lourds
                 val interval = if (daysDiff > 730) "1wk" else "1d"
                 val response = yahooFinanceApi.getHistoricalChartData(yahooTicker, period1, period2, interval)
                 val chartResult = response.chart.result?.firstOrNull()
                 val timestamps = chartResult?.timestamp
                 val closes = chartResult?.indicators?.quote?.firstOrNull()?.close
-                
-                // Pour l'or physique, il faut diviser par 31.1035 et ajuster selon la nature de l'actif
-                val multiplier = when (assetId) {
-                    "gold_bar", "gold_ingot" -> 1.0 / 31.1035
-                    "gold_coin_napoleon" -> (1.0 / 31.1035) * 5.806
-                    "silver_bar" -> 1.0 / 31.1035
-                    else -> 1.0 // Normalisation EUR/USD pas encore incluse dans l'historique brut Yahoo facilement, ou on assume que le portfeuille est en USD pour les actions US? (Ici version simplifiée).
-                }
 
                 if (timestamps != null && closes != null) {
                     for (i in timestamps.indices) {
                         val tsMs = timestamps[i] * 1000L
                         val closePrice = closes.getOrNull(i)
                         if (closePrice != null && tsMs >= firstBuyDateMs) {
-                            result.add(Pair(tsMs, closePrice * multiplier))
+                            result.add(Pair(tsMs, closePrice))
                         }
                     }
                 }
