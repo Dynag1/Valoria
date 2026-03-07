@@ -25,7 +25,7 @@ object AppModule {
             context,
             AppDatabase::class.java,
             "portmonnai_db"
-        ).build()
+        ).fallbackToDestructiveMigration().build()
     }
 
     @Provides

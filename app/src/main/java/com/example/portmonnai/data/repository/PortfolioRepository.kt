@@ -1,13 +1,17 @@
 package com.example.portmonnai.data.repository
 
 import com.example.portmonnai.data.local.AssetEntity
+import com.example.portmonnai.data.local.AppDatabase
 import com.example.portmonnai.data.local.PortfolioDao
 import com.example.portmonnai.data.local.TransactionEntity
 import com.example.portmonnai.data.remote.CoinGeckoApi
 import com.example.portmonnai.domain.model.*
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
+import androidx.room.withTransaction
 
 // IDs spéciaux pour les métaux physiques (pas de ticker Yahoo standard)
 private val METAL_IDS = setOf(
@@ -25,10 +29,12 @@ private val METAL_TICKERS = mapOf(
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @Singleton
 class PortfolioRepository @Inject constructor(
-    private val portfolioDao: PortfolioDao,
+    private val database: AppDatabase,
     private val coinGeckoApi: CoinGeckoApi,
     private val yahooFinanceApi: com.example.portmonnai.data.remote.YahooFinanceApi
 ) {
+    private val portfolioDao = database.portfolioDao()
+    private val syncMutex = Mutex()
     private val cachedPrices = mutableMapOf<String, PriceData>()
     private val refreshTrigger = MutableSharedFlow<Unit>(replay = 1).apply { tryEmit(Unit) }
 
@@ -454,7 +460,7 @@ class PortfolioRepository @Inject constructor(
     // Export / Import JSON
     // ───────────────────────────────────────────────
 
-    suspend fun exportToJson(): String {
+    suspend fun exportToJson(): String = syncMutex.withLock {
         val assets = portfolioDao.getAllAssetsOnce()
         val transactions = portfolioDao.getAllTransactionsOnce()
 
@@ -481,7 +487,7 @@ class PortfolioRepository @Inject constructor(
         return com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(exportData)
     }
 
-    suspend fun importFromJson(json: String, clearExisting: Boolean = false): ImportResult {
+    suspend fun importFromJson(json: String, clearExisting: Boolean = false): ImportResult = syncMutex.withLock {
         return try {
             val gson = com.google.gson.Gson()
             @Suppress("UNCHECKED_CAST")
@@ -492,47 +498,73 @@ class PortfolioRepository @Inject constructor(
             @Suppress("UNCHECKED_CAST")
             val transactionsList = data["transactions"] as? List<Map<String, Any>> ?: emptyList()
 
-            // Nettoyage complet si c'est une synchronisation (évite les doublons et transactions fantômes)
-            if (clearExisting) {
-                portfolioDao.deleteAllTransactions()
-                portfolioDao.deleteAllAssets()
+            database.withTransaction {
+                if (clearExisting) {
+                    portfolioDao.deleteAllTransactions()
+                    portfolioDao.deleteAllAssets()
+                }
+
+                var importedAssets = 0
+                var importedTransactions = 0
+
+                // 1. Charger les transactions existantes pour déduplication (si on ne clear pas tout)
+                val existingTxs = if (!clearExisting) portfolioDao.getAllTransactionsOnce() else emptyList()
+                val processedKeys = mutableSetOf<String>()
+
+                for (a in assetsList) {
+                    try {
+                        portfolioDao.insertAsset(AssetEntity(
+                            id = a["id"] as String,
+                            name = a["name"] as String,
+                            symbol = a["symbol"] as String,
+                            type = AssetType.valueOf(a["type"] as String)
+                        ))
+                        importedAssets++
+                    } catch (e: Exception) { e.printStackTrace() }
+                }
+
+                for (t in transactionsList) {
+                    try {
+                        val assetId = t["assetId"] as String
+                        val type = TransactionType.valueOf(t["type"] as String)
+                        val quantity = (t["quantity"] as Double)
+                        val priceAtDate = (t["priceAtDate"] as Double)
+                        val date = ((t["date"] as? Double)?.toLong() ?: 0L)
+                        val fees = (t["fees"] as? Double) ?: 0.0
+                        val idDouble = (t["id"] as? Double) ?: 0.0
+                        val jsonId = idDouble.toLong()
+
+                        // Clé unique de transaction interne au JSON : actif + date + type + quantité
+                        val uniqueKey = "$assetId-$date-$type-$quantity"
+                        if (processedKeys.contains(uniqueKey)) continue
+                        processedKeys.add(uniqueKey)
+
+                        // Déduplication logique par rapport à la base
+                        if (!clearExisting) {
+                            val isDuplicate = existingTxs.any {
+                                it.assetId == assetId && it.date == date && 
+                                it.type == type && Math.abs(it.quantity - quantity) < 0.000001
+                            }
+                            if (isDuplicate) continue
+                        }
+
+                        val txId = if (clearExisting && jsonId > 0) jsonId else 0L
+
+                        portfolioDao.insertTransaction(TransactionEntity(
+                            id = txId,
+                            assetId = assetId,
+                            type = type,
+                            quantity = quantity,
+                            priceAtDate = priceAtDate,
+                            date = date,
+                            fees = fees
+                        ))
+                        importedTransactions++
+                    } catch (e: Exception) { e.printStackTrace() }
+                }
+
+                ImportResult.Success(importedAssets, importedTransactions)
             }
-
-            var importedAssets = 0
-            var importedTransactions = 0
-
-            for (a in assetsList) {
-                try {
-                    portfolioDao.insertAsset(AssetEntity(
-                        id = a["id"] as String,
-                        name = a["name"] as String,
-                        symbol = a["symbol"] as String,
-                        type = AssetType.valueOf(a["type"] as String)
-                    ))
-                    importedAssets++
-                } catch (e: Exception) { /* skip malformed */ }
-            }
-
-            for (t in transactionsList) {
-                try {
-                    val idDouble = (t["id"] as? Double) ?: 0.0
-                    // On conserve l'identifiant pour ne pas casser la base si on vide et recrée
-                    val txId = if (clearExisting && idDouble > 0) idDouble.toLong() else 0L
-
-                    portfolioDao.insertTransaction(TransactionEntity(
-                        id = txId,
-                        assetId = t["assetId"] as String,
-                        type = TransactionType.valueOf(t["type"] as String),
-                        quantity = (t["quantity"] as Double),
-                        priceAtDate = (t["priceAtDate"] as Double),
-                        date = ((t["date"] as? Double)?.toLong() ?: 0L),
-                        fees = (t["fees"] as? Double) ?: 0.0
-                    ))
-                    importedTransactions++
-                } catch (e: Exception) { /* skip malformed */ }
-            }
-
-            ImportResult.Success(importedAssets, importedTransactions)
         } catch (e: Exception) {
             ImportResult.Error(e.message ?: "Erreur inconnue")
         }

@@ -181,13 +181,22 @@ class PortfolioViewModel @Inject constructor(
             val json = repository.exportToJson()
             val folder = DocumentFile.fromTreeUri(appContext, folderUri) ?: return
 
-            // Cherche le fichier existant ou le crée
-            // On utilise octet-stream pour éviter qu'Android n'ajoute ".json" à la fin du nom
-            val file = folder.findFile(BACKUP_FILENAME)
-                ?: folder.createFile("application/octet-stream", BACKUP_FILENAME)
-                ?: return
+            // Recherche robuste du fichier existant (évite les doublons créés par Android)
+            var file = folder.findFile(BACKUP_FILENAME)
+            
+            // Si non trouvé par findFile, on balaye les fichiers (parfois nécessaire avec SAF)
+            if (file == null) {
+                file = folder.listFiles().find { it.name == BACKUP_FILENAME }
+            }
 
-            appContext.contentResolver.openOutputStream(file.uri, "wt")?.use { stream ->
+            // Création si vraiment inexistant
+            if (file == null) {
+                file = folder.createFile("application/octet-stream", BACKUP_FILENAME)
+            }
+            
+            val finalFile = file ?: return
+
+            appContext.contentResolver.openOutputStream(finalFile.uri, "wt")?.use { stream ->
                 stream.write(json.toByteArray())
             }
         } catch (e: Exception) {
