@@ -63,7 +63,7 @@ fun SettingsScreen(
                 icon = Icons.Default.FileUpload,
                 iconTint = MaterialTheme.colorScheme.primary,
                 title = "Exporter les données",
-                subtitle = "Enregistre un fichier JSON de votre portefeuille",
+                subtitle = "Enregistre un fichier de votre portefeuille (.val)",
                 onClick = onExport
             )
 
@@ -72,7 +72,7 @@ fun SettingsScreen(
                 icon = Icons.Default.FileDownload,
                 iconTint = MaterialTheme.colorScheme.secondary,
                 title = "Importer les données",
-                subtitle = "Restaure un fichier JSON de sauvegarde",
+                subtitle = "Restaure un fichier de sauvegarde Valoria (.val)",
                 onClick = onImport
             )
 
@@ -88,7 +88,7 @@ fun SettingsScreen(
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("ℹ️  À propos de l'export", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     Text(
-                        "Le fichier exporté (valoria_backup.json) contient tous vos actifs et transactions. " +
+                        "Le fichier exporté (valoria_backup.val) contient tous vos actifs et transactions. " +
                         "Vous pouvez le partager, l'envoyer par email ou le synchroniser avec Google Drive.",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)

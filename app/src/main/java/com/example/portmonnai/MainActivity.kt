@@ -3,6 +3,7 @@ package com.example.portmonnai
 import android.content.Context
 import android.net.Uri
 import android.os.Bundle
+import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -57,6 +58,26 @@ class MainActivity : ComponentActivity() {
                         viewModel.autoLoadFromFolder()
                     }
 
+                    // Interception d'un fichier .val ouvert depuis l'explorateur de fichiers Android
+                    LaunchedEffect(intent) {
+                        if (intent?.action == Intent.ACTION_VIEW) {
+                            intent.data?.let { uri ->
+                                try {
+                                    val json = contentResolver.openInputStream(uri)?.use { stream ->
+                                        stream.readBytes().toString(Charsets.UTF_8)
+                                    }
+                                    if (json != null) {
+                                        viewModel.importFromJson(json)
+                                        // On réinitialise l'intent pour ne pas recharger à chaque rotation d'écran
+                                        setIntent(Intent())
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                        }
+                    }
+
                     // ── ActivityResult Launchers ───────────────────────────
 
                     // 1. Sélecteur de dossier (OpenDocumentTree)
@@ -80,7 +101,7 @@ class MainActivity : ComponentActivity() {
 
                     // 2. Export : CreateDocument dans le dossier choisi ou via sélecteur
                     val exportLauncher = rememberLauncherForActivityResult(
-                        contract = ActivityResultContracts.CreateDocument("application/json")
+                        contract = ActivityResultContracts.CreateDocument("application/octet-stream")
                     ) { uri: Uri? ->
                         if (uri != null) {
                             scope.launch {
@@ -118,7 +139,7 @@ class MainActivity : ComponentActivity() {
                     // Nom du fichier export avec date
                     fun exportFileName(): String {
                         val date = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
-                        return "valoria_backup_$date.json"
+                        return "valoria_backup_$date.val"
                     }
 
                     // ── Navigation ─────────────────────────────────────────
@@ -207,7 +228,7 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onBack = { navController.popBackStack() },
                                 onExport = { exportLauncher.launch(exportFileName()) },
-                                onImport = { importLauncher.launch(arrayOf("application/json", "*/*")) },
+                                onImport = { importLauncher.launch(arrayOf("*/*")) },
                                 onChooseFolder = { folderPickerLauncher.launch(null) }
                             )
                         }
