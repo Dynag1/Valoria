@@ -47,10 +47,10 @@ jobs:
           cd fdroid
           fdroid init
           
-          # Personnaliser le repo
-          sed -i 's/repo_name = .*/repo_name = "Repo Valoria (Dynag1)"/' config.yml
-          sed -i 's/repo_description = .*/repo_description = "Dépôt personnel pour les tests de Valoria."/' config.yml
-          sed -i 's|repo_url = .*|repo_url = "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"|' config.yml
+          # Personnaliser le repo (YAML utilise : et non =)
+          sed -i 's|^#* *repo_name:.*|repo_name: "Repo Valoria (Dynag1)"|' config.yml
+          sed -i 's|^#* *repo_description:.*|repo_description: "Dépôt personnel pour les tests de Valoria."|' config.yml
+          sed -i 's|^#* *repo_url:.*|repo_url: "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"|' config.yml
           
           # Mettre à jour et construire l'index
           fdroid update -c
