@@ -45,12 +45,20 @@ jobs:
           mkdir -p fdroid/repo
           cp app/build/outputs/apk/debug/app-debug.apk fdroid/repo/Valoria-${{ github.ref_name }}.apk
           cd fdroid
-          fdroid init
+          
+          # Convertir la clé JKS du projet en PKCS12 pour F-Droid
+          keytool -importkeystore -srckeystore ../app/valoria_debug.jks -srcstorepass android -destkeystore keystore.p12 -deststoretype PKCS12 -deststorepass android -destkeypass android -noprompt
+          
+          fdroid init --keystore keystore.p12 --repo-keyalias androiddebugkey
           
           # Personnaliser le repo (YAML utilise : et non =)
           sed -i 's|^#* *repo_name:.*|repo_name: "Repo Valoria (Dynag1)"|' config.yml
           sed -i 's|^#* *repo_description:.*|repo_description: "Dépôt personnel pour les tests de Valoria."|' config.yml
           sed -i 's|^#* *repo_url:.*|repo_url: "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/repo"|' config.yml
+          
+          # Forcer le mot de passe dans la config pour l'automatisation
+          echo "keystorepass: android" >> config.yml
+          echo "keypass: android" >> config.yml
           
           # Mettre à jour et construire l'index
           fdroid update -c
