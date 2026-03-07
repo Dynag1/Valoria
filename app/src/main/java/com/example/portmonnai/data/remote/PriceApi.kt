@@ -11,11 +11,22 @@ interface CoinGeckoApi {
         @Query("include_24hr_change") includeChange: Boolean = true
     ): Map<String, Map<String, Double>>
 
+    @GET("coins/{id}/market_chart")
+    suspend fun getMarketChart(
+        @retrofit2.http.Path("id") id: String,
+        @Query("vs_currency") currency: String = "eur",
+        @Query("days") days: String = "max" // ou "1", "7", "365", "max"
+    ): CoinGeckoMarketChartResponse
+
     @GET("search")
     suspend fun searchCoins(
         @Query("query") query: String
     ): SearchResponse
 }
+
+data class CoinGeckoMarketChartResponse(
+    val prices: List<List<Double>>? // listOf([timestamp, price], ...)
+)
 
 data class SearchResponse(
     val coins: List<CoinSearchItem>
@@ -36,6 +47,14 @@ interface YahooFinanceApi {
         @Query("range") range: String = "1d"
     ): YahooChartResponse
 
+    @GET("v8/finance/chart/{ticker}")
+    suspend fun getHistoricalChartData(
+        @retrofit2.http.Path("ticker") ticker: String,
+        @Query("period1") period1: Long,
+        @Query("period2") period2: Long,
+        @Query("interval") interval: String = "1d"
+    ): YahooChartResponse
+
     @GET("v1/finance/search")
     suspend fun searchTicker(
         @Query("q") query: String,
@@ -46,16 +65,26 @@ interface YahooFinanceApi {
 }
 
 data class YahooChartResponse(
-    val chart: ChartResult
+    val chart: ChartResultWrapper
 )
 
-data class ChartResult(
+data class ChartResultWrapper(
     val result: List<ChartData>?,
     val error: Any?
 )
 
 data class ChartData(
-    val meta: ChartMeta
+    val meta: ChartMeta,
+    val timestamp: List<Long>?,
+    val indicators: ChartIndicators?
+)
+
+data class ChartIndicators(
+    val quote: List<ChartQuote>?
+)
+
+data class ChartQuote(
+    val close: List<Double?>?
 )
 
 data class ChartMeta(

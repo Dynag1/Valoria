@@ -102,15 +102,28 @@ class PortfolioViewModel @Inject constructor(
     }
 
     fun loadTransactionsForAsset(assetId: String) {
+        _uiState.update { it.copy(selectedAssetChartData = null) } // Réinitialiser le chart
         repository.getTransactionsForAsset(assetId)
             .onEach { txList ->
                 _uiState.update { it.copy(selectedAssetTransactions = txList) }
+                
+                // Charger le graphique en arrière-plan
+                viewModelScope.launch {
+                    val asset = _uiState.value.portfolioAssets.find { it.asset.id == assetId }?.asset
+                    if (asset != null && txList.isNotEmpty()) {
+                        val firstBuy = txList.filter { it.type == com.example.portmonnai.domain.model.TransactionType.BUY }.minOfOrNull { it.date }
+                        if (firstBuy != null) {
+                            val chart = repository.getAssetHistoricalPrices(asset.id, asset.symbol, asset.type, firstBuy)
+                            _uiState.update { it.copy(selectedAssetChartData = chart) }
+                        }
+                    }
+                }
             }
             .launchIn(viewModelScope)
     }
 
     fun clearSelectedAssetTransactions() {
-        _uiState.update { it.copy(selectedAssetTransactions = emptyList()) }
+        _uiState.update { it.copy(selectedAssetTransactions = emptyList(), selectedAssetChartData = null) }
     }
 
     fun searchAssets(query: String) {
@@ -215,6 +228,7 @@ data class PortfolioUiState(
     val totalProfitPercentage: Double = 0.0,
     val totalProfitToday: Double = 0.0,
     val selectedAssetTransactions: List<Transaction> = emptyList(),
+    val selectedAssetChartData: List<Pair<Long, Double>>? = null,
     val importMessage: String? = null,
     val error: String? = null
 )

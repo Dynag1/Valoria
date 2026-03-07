@@ -1,5 +1,6 @@
 package com.example.portmonnai.ui.screens
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,7 +13,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -31,6 +36,7 @@ import java.util.Locale
 fun AssetDetailScreen(
     portfolioAsset: PortfolioAsset,
     transactions: List<Transaction>,
+    historicalChartData: List<Pair<Long, Double>>?,
     onBack: () -> Unit,
     onEditTransaction: (Transaction) -> Unit,
     onDeleteTransaction: (Transaction) -> Unit
@@ -99,6 +105,22 @@ fun AssetDetailScreen(
             // Summary card
             item {
                 AssetSummaryCard(portfolioAsset)
+            }
+
+            // Performance Chart
+            item {
+                if (historicalChartData != null) {
+                    if (historicalChartData.isNotEmpty()) {
+                        PerformanceChartCard(historicalChartData)
+                    } else {
+                        // Graphique non disponible ou vide
+                    }
+                } else {
+                    // Chargement du graphique
+                    Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Gold)
+                    }
+                }
             }
 
             item {
@@ -276,6 +298,81 @@ fun TransactionItem(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun PerformanceChartCard(data: List<Pair<Long, Double>>) {
+    Card(
+        modifier = Modifier.fillMaxWidth().height(200.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Performance depuis le 1er achat",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+
+            if (data.size < 2) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Pas assez de données", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
+                }
+                return@Column
+            }
+
+            val minPrice = data.minOf { it.second }
+            val maxPrice = data.maxOf { it.second }
+            val minTime = data.first().first
+            val maxTime = data.last().first
+
+            val range = (maxPrice - minPrice).takeIf { it > 0 } ?: 1.0
+            val timeRange = (maxTime - minTime).takeIf { it > 0 } ?: 1L
+
+            val isPositive = data.last().second >= data.first().second
+            val lineColor = if (isPositive) GreenHedge else RedHedge
+
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val width = size.width
+                val height = size.height
+
+                val path = Path()
+
+                data.forEachIndexed { index, point ->
+                    val x = ((point.first - minTime).toFloat() / timeRange.toFloat()) * width
+                    // Inverse Y axis because 0,0 is top-left
+                    val y = height - (((point.second - minPrice).toFloat() / range.toFloat()) * height)
+
+                    if (index == 0) {
+                        path.moveTo(x, y)
+                    } else {
+                        path.lineTo(x, y)
+                    }
+                }
+
+                drawPath(
+                    path = path,
+                    color = lineColor,
+                    style = Stroke(width = 2.dp.toPx())
+                )
+
+                val fillPath = Path().apply {
+                    addPath(path)
+                    lineTo(width, height)
+                    lineTo(0f, height)
+                    close()
+                }
+
+                drawPath(
+                    path = fillPath,
+                    brush = Brush.verticalGradient(
+                        colors = listOf(lineColor.copy(alpha = 0.3f), Color.Transparent)
+                    )
+                )
             }
         }
     }

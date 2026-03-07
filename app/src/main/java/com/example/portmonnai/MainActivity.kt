@@ -165,6 +165,7 @@ class MainActivity : ComponentActivity() {
                                 AssetDetailScreen(
                                     portfolioAsset = asset,
                                     transactions = uiState.selectedAssetTransactions,
+                                    historicalChartData = uiState.selectedAssetChartData,
                                     onBack = {
                                         viewModel.clearSelectedAssetTransactions()
                                         navController.popBackStack()
