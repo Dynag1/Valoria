@@ -1,6 +1,11 @@
 package com.example.portmonnai.ui.screens
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -306,17 +311,56 @@ fun TransactionItem(
 @Composable
 fun PerformanceChartCard(data: List<Pair<Long, Double>>) {
     Card(
-        modifier = Modifier.fillMaxWidth().height(200.dp),
+        modifier = Modifier.fillMaxWidth().height(240.dp),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "Performance depuis le 1er achat",
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
+            var touchX by remember { mutableStateOf<Float?>(null) }
+            var boxWidth by remember { mutableStateOf(0) }
+
+            Row(
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Text(
+                    text = "Performance depuis le 1er achat",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+
+                if (data.size >= 2 && touchX != null && boxWidth > 0) {
+                    val minTime = data.first().first
+                    val maxTime = data.last().first
+                    val timeRange = (maxTime - minTime).takeIf { it > 0 } ?: 1L
+                    val xRatio = (touchX!! / boxWidth).coerceIn(0f, 1f)
+                    val targetTime = minTime + (xRatio * timeRange).toLong()
+                    val hoverPoint = data.minByOrNull { kotlin.math.abs(it.first - targetTime) }
+
+                    if (hoverPoint != null) {
+                        val originalPrice = data.first().second
+                        val currentHoverPrice = hoverPoint.second
+                        val isGain = currentHoverPrice >= originalPrice
+                        val pct = if (originalPrice > 0) ((currentHoverPrice - originalPrice) / originalPrice) * 100 else 0.0
+                        val valColor = if (isGain) GreenHedge else RedHedge
+                        val sign = if (isGain) "+" else ""
+
+                        val priceStr = "€${formatValue(currentHoverPrice)}"
+                        val pctStr = "$sign${formatValue(pct)}%"
+                        val dateStr = SimpleDateFormat("dd MMM yy HH:mm", Locale.getDefault()).format(Date(hoverPoint.first))
+
+                        Column(horizontalAlignment = Alignment.End) {
+                            Row(verticalAlignment = Alignment.Bottom) {
+                                Text(priceStr, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(pctStr, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = valColor)
+                            }
+                            Text(dateStr, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                        }
+                    }
+                }
+            }
 
             if (data.size < 2) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -336,7 +380,30 @@ fun PerformanceChartCard(data: List<Pair<Long, Double>>) {
             val isPositive = data.last().second >= data.first().second
             val lineColor = if (isPositive) GreenHedge else RedHedge
 
-            Canvas(modifier = Modifier.fillMaxSize()) {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .onSizeChanged { boxWidth = it.width }
+                    .pointerInput(data) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown()
+                            touchX = down.position.x
+                            do {
+                                val event = awaitPointerEvent()
+                                val move = event.changes.firstOrNull()
+                                if (move != null) {
+                                    if (move.pressed) {
+                                        touchX = move.position.x
+                                        move.consume()
+                                    } else {
+                                        touchX = null
+                                    }
+                                }
+                            } while (event.changes.any { it.pressed })
+                            touchX = null
+                        }
+                    }
+            ) {
                 val width = size.width
                 val height = size.height
 
@@ -344,7 +411,6 @@ fun PerformanceChartCard(data: List<Pair<Long, Double>>) {
 
                 data.forEachIndexed { index, point ->
                     val x = ((point.first - minTime).toFloat() / timeRange.toFloat()) * width
-                    // Inverse Y axis because 0,0 is top-left
                     val y = height - (((point.second - minPrice).toFloat() / range.toFloat()) * height)
 
                     if (index == 0) {
@@ -373,6 +439,36 @@ fun PerformanceChartCard(data: List<Pair<Long, Double>>) {
                         colors = listOf(lineColor.copy(alpha = 0.3f), Color.Transparent)
                     )
                 )
+
+                // Optional Indicator line
+                if (touchX != null && boxWidth > 0) {
+                    val xRatio = (touchX!! / boxWidth).coerceIn(0f, 1f)
+                    val targetTime = minTime + (xRatio * timeRange).toLong()
+                    val hoverPoint = data.minByOrNull { kotlin.math.abs(it.first - targetTime) }
+                    
+                    if (hoverPoint != null) {
+                        val px = ((hoverPoint.first - minTime).toFloat() / timeRange.toFloat()) * width
+                        val py = height - (((hoverPoint.second - minPrice).toFloat() / range.toFloat()) * height)
+
+                        drawLine(
+                            color = Color.Gray.copy(alpha = 0.5f),
+                            start = Offset(px, 0f),
+                            end = Offset(px, height),
+                            strokeWidth = 1.dp.toPx(),
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f))
+                        )
+                        drawCircle(
+                            color = lineColor,
+                            radius = 6.dp.toPx(),
+                            center = Offset(px, py)
+                        )
+                        drawCircle(
+                            color = Color.White,
+                            radius = 3.dp.toPx(),
+                            center = Offset(px, py)
+                        )
+                    }
+                }
             }
         }
     }
