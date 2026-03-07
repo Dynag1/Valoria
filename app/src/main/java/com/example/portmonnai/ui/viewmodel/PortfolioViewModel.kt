@@ -16,7 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import javax.inject.Inject
 
-private const val BACKUP_FILENAME = "valoria_backup.val"
+private const val BACKUP_FILENAME = "Valoria.val"
 
 @HiltViewModel
 class PortfolioViewModel @Inject constructor(
