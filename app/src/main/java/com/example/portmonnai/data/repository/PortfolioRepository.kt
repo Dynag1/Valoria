@@ -44,17 +44,27 @@ class PortfolioRepository @Inject constructor(
                 val totalQty = assetTransactions.sumOf {
                     if (it.type == TransactionType.BUY) it.quantity else -it.quantity
                 }
-                val buyTransactions = assetTransactions.filter { it.type == TransactionType.BUY }
-                val totalBuyQty = buyTransactions.sumOf { it.quantity }
-                val avgPrice = if (totalBuyQty > 0) {
-                    buyTransactions.sumOf { it.quantity * it.priceAtDate } / totalBuyQty
-                } else 0.0
+                val totalCost = assetTransactions.filter { it.type == TransactionType.BUY }
+                    .sumOf { it.quantity * it.priceAtDate + it.fees }
+                val totalRevenue = assetTransactions.filter { it.type == TransactionType.SELL }
+                    .sumOf { it.quantity * it.priceAtDate - it.fees }
+
+                // Montant réel investi (de sa poche)
+                val netInvested = totalCost - totalRevenue
 
                 val priceData = prices[entity.id]
                 val currentPrice = priceData?.price ?: 0.0
+                
                 val totalValue = totalQty * currentPrice
-                val profit = totalValue - (totalQty * avgPrice)
-                val profitPct = if (avgPrice > 0) (profit / (totalQty * avgPrice)) * 100 else 0.0
+                
+                // Plus-value = Valeur Actuelle - Investissement Net
+                val profit = totalValue - netInvested
+                
+                // Le % de gain par rapport au montant net investi (ou au coût originel si on a retiré sa mise initiale)
+                val profitPct = if (netInvested > 0) (profit / netInvested) * 100.0 else if (totalCost > 0) (profit / totalCost) * 100.0 else 0.0
+                
+                // Pour l'affichage "Prix moyen d'achat", on affiche l'équivalent du "coût net par unité restante"
+                val avgPrice = if (totalQty > 0 && netInvested > 0) netInvested / totalQty else 0.0
 
                 val change24h = priceData?.change24h ?: 0.0
                 val profitToday = totalValue * (change24h / 100)
