@@ -10,9 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TrendingDown
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -20,12 +18,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.portmonnai.domain.model.AssetType
 import com.example.portmonnai.domain.model.PortfolioAsset
 import com.example.portmonnai.ui.theme.Gold
 import com.example.portmonnai.ui.theme.GreenHedge
@@ -57,14 +57,27 @@ fun DashboardScreen(
     var assetToDelete by remember { mutableStateOf<PortfolioAsset?>(null) }
     var sortOrder by remember { mutableStateOf(AssetSortOrder.VALUE) }
     var showSortMenu by remember { mutableStateOf(false) }
+    val expandedStates = remember { mutableStateMapOf<String, Boolean>() }
     val snackbarHostState = remember { SnackbarHostState() }
 
-    val sortedAssets = remember(assets, sortOrder) {
-        when (sortOrder) {
-            AssetSortOrder.NAME -> assets.sortedBy { it.asset.name }
-            AssetSortOrder.VALUE -> assets.sortedByDescending { it.totalValue }
-            AssetSortOrder.PROFIT -> assets.sortedByDescending { it.totalProfit }
-            AssetSortOrder.PROFIT_PERCENTAGE -> assets.sortedByDescending { it.profitPercentage }
+    val categories = listOf("ETF", "CRYPTO", "MÉTAUX", "ACTIONS")
+
+    val groupedAssets = remember(assets, sortOrder) {
+        val grouped = assets.groupBy { 
+            when (it.asset.type) {
+                AssetType.ETF -> "ETF"
+                AssetType.CRYPTO -> "CRYPTO"
+                AssetType.GOLD_BAR, AssetType.GOLD_INGOT, AssetType.GOLD_COIN, AssetType.METAL -> "MÉTAUX"
+                else -> "ACTIONS"
+            }
+        }
+        grouped.mapValues { (_, list) ->
+            when (sortOrder) {
+                AssetSortOrder.NAME -> list.sortedBy { it.asset.name }
+                AssetSortOrder.VALUE -> list.sortedByDescending { it.totalValue }
+                AssetSortOrder.PROFIT -> list.sortedByDescending { it.totalProfit }
+                AssetSortOrder.PROFIT_PERCENTAGE -> list.sortedByDescending { it.profitPercentage }
+            }
         }
     }
 
@@ -201,11 +214,101 @@ fun DashboardScreen(
                     }
                 }
 
-                items(sortedAssets, key = { it.asset.id }) { asset ->
-                    AssetCard(
-                        portfolioAsset = asset,
-                        onClick = { onAssetClick(asset) }
-                    )
+                items(categories) { category ->
+                    val categoryAssets = groupedAssets[category] ?: emptyList()
+                    if (categoryAssets.isNotEmpty()) {
+                        val isExpanded = expandedStates[category] != false
+                        val totalCatValue = categoryAssets.sumOf { it.totalValue }
+                        val totalCatProfit = categoryAssets.sumOf { it.totalProfit }
+                        val totalCatInvested = categoryAssets.sumOf { it.totalQuantity * it.averageBuyPrice }
+                        val totalCatProfitPct = if (totalCatInvested > 0) (totalCatProfit / totalCatInvested) * 100.0 else 0.0
+                        val totalCatProfitToday = categoryAssets.sumOf { it.profitToday }
+                        val totalCatProfitTodayPct = if (totalCatValue - totalCatProfitToday > 0) 
+                            (totalCatProfitToday / (totalCatValue - totalCatProfitToday)) * 100.0 else 0.0
+
+                        val profitColor = if (totalCatProfit >= 0) GreenHedge else RedHedge
+                        val profitTodayColor = if (totalCatProfitToday >= 0) GreenHedge else RedHedge
+
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Surface(
+                                onClick = { expandedStates[category] = !isExpanded },
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = category,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(
+                                            text = "€${formatValue(totalCatValue)}",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = Gold,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Icon(
+                                            imageVector = Icons.Default.ChevronRight,
+                                            contentDescription = null,
+                                            modifier = Modifier.rotate(if (isExpanded) 90f else 0f),
+                                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                        )
+                                    }
+                                    
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column {
+                                            Text("Profit Total", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                                            Row {
+                                                Text(
+                                                    "${if (totalCatProfit >= 0) "+" else ""}€${formatValue(totalCatProfit)}",
+                                                    color = profitColor, fontSize = 13.sp, fontWeight = FontWeight.Bold
+                                                )
+                                                Text(
+                                                    " (${String.format("%.1f", totalCatProfitPct)}%)",
+                                                    color = profitColor, fontSize = 12.sp
+                                                )
+                                            }
+                                        }
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text("Aujourd'hui", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                                            Row {
+                                                Text(
+                                                    "${if (totalCatProfitToday >= 0) "+" else ""}€${formatValue(totalCatProfitToday)}",
+                                                    color = profitTodayColor, fontSize = 13.sp, fontWeight = FontWeight.Bold
+                                                )
+                                                Text(
+                                                    " (${String.format("%.1f", totalCatProfitTodayPct)}%)",
+                                                    color = profitTodayColor, fontSize = 12.sp
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (isExpanded) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    categoryAssets.forEach { asset ->
+                                        AssetCard(
+                                            portfolioAsset = asset,
+                                            onClick = { onAssetClick(asset) }
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(16.dp))
+                            }
+                        }
+                    }
                 }
             }
 
