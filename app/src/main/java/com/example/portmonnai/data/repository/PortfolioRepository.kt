@@ -529,19 +529,14 @@ class PortfolioRepository @Inject constructor(
                         val typeStr = t["type"] as String
                         val type = TransactionType.valueOf(typeStr)
                         
-                        // Extraction robuste des nombres pour éviter les ClassCastException (Double vs Long)
-                        val quantity = t["quantity"]?.toString()?.toDoubleOrNull() ?: 0.0
-                        val priceAtDate = t["priceAtDate"]?.toString()?.toDoubleOrNull() ?: 0.0
-                        val date = t["date"]?.toString()?.toDoubleOrNull()?.toLong() ?: 0L
-                        val fees = t["fees"]?.toString()?.toDoubleOrNull() ?: 0.0
-                        val jsonId = t["id"]?.toString()?.toDoubleOrNull()?.toLong() ?: 0L
+                        // Extraction plus directe et robuste des nombres (Gson/Room)
+                        val quantity = (t["quantity"] as? Number)?.toDouble() ?: 0.0
+                        val priceAtDate = (t["priceAtDate"] as? Number)?.toDouble() ?: 0.0
+                        val date = (t["date"] as? Number)?.toLong() ?: 0L
+                        val fees = (t["fees"] as? Number)?.toDouble() ?: 0.0
+                        val jsonId = (t["id"] as? Number)?.toLong() ?: 0L
 
-                        // Clé unique de transaction interne au JSON : actif + date + type + quantité + prix
-                        val uniqueKey = "$assetId-$date-$type-$quantity-$priceAtDate"
-                        if (processedKeys.contains(uniqueKey)) continue
-                        processedKeys.add(uniqueKey)
-
-                        // Déduplication logique par rapport à la base
+                        // Déduplication logique uniquement si on ne vide pas tout (import manuel)
                         if (!clearExisting) {
                             val isDuplicate = existingTxs.any {
                                 it.assetId == assetId && it.date == date && 
@@ -551,6 +546,7 @@ class PortfolioRepository @Inject constructor(
                             if (isDuplicate) continue
                         }
 
+                        // En mode sync (clearExisting), on tente de garder l'ID original du JSON
                         val txId = if (clearExisting && jsonId > 0) jsonId else 0L
 
                         portfolioDao.insertTransaction(TransactionEntity(
