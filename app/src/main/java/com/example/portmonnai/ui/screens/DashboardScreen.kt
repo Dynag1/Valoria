@@ -82,18 +82,8 @@ fun DashboardScreen(
     }
 
     Scaffold(
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = onAddTransaction,
-                containerColor = Gold,
-                contentColor = Color.Black
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Ajouter")
-            }
-        },
-        floatingActionButtonPosition = FabPosition.End,
         bottomBar = {
-            // Barre basse : hamburger à gauche
+            // Barre basse : hamburger à gauche, + à droite
             Surface(
                 tonalElevation = 3.dp,
                 color = MaterialTheme.colorScheme.surface
@@ -102,8 +92,8 @@ fun DashboardScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
-                        .height(56.dp)
-                        .padding(horizontal = 8.dp),
+                        .height(64.dp)
+                        .padding(horizontal = 16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = onSettingsClick) {
@@ -113,8 +103,17 @@ fun DashboardScreen(
                             tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                         )
                     }
-                    // Espace pour ne pas chevaucher le FAB
+                    
                     Spacer(modifier = Modifier.weight(1f))
+
+                    SmallFloatingActionButton(
+                        onClick = onAddTransaction,
+                        containerColor = Gold,
+                        contentColor = Color.Black,
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Ajouter")
+                    }
                 }
             }
         },
