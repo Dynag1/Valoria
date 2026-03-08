@@ -526,16 +526,18 @@ class PortfolioRepository @Inject constructor(
                 for (t in transactionsList) {
                     try {
                         val assetId = t["assetId"] as String
-                        val type = TransactionType.valueOf(t["type"] as String)
-                        val quantity = (t["quantity"] as Double)
-                        val priceAtDate = (t["priceAtDate"] as Double)
-                        val date = ((t["date"] as? Double)?.toLong() ?: 0L)
-                        val fees = (t["fees"] as? Double) ?: 0.0
-                        val idDouble = (t["id"] as? Double) ?: 0.0
-                        val jsonId = idDouble.toLong()
+                        val typeStr = t["type"] as String
+                        val type = TransactionType.valueOf(typeStr)
+                        
+                        // Extraction robuste des nombres pour éviter les ClassCastException (Double vs Long)
+                        val quantity = t["quantity"]?.toString()?.toDoubleOrNull() ?: 0.0
+                        val priceAtDate = t["priceAtDate"]?.toString()?.toDoubleOrNull() ?: 0.0
+                        val date = t["date"]?.toString()?.toDoubleOrNull()?.toLong() ?: 0L
+                        val fees = t["fees"]?.toString()?.toDoubleOrNull() ?: 0.0
+                        val jsonId = t["id"]?.toString()?.toDoubleOrNull()?.toLong() ?: 0L
 
-                        // Clé unique de transaction interne au JSON : actif + date + type + quantité
-                        val uniqueKey = "$assetId-$date-$type-$quantity"
+                        // Clé unique de transaction interne au JSON : actif + date + type + quantité + prix
+                        val uniqueKey = "$assetId-$date-$type-$quantity-$priceAtDate"
                         if (processedKeys.contains(uniqueKey)) continue
                         processedKeys.add(uniqueKey)
 
@@ -543,7 +545,8 @@ class PortfolioRepository @Inject constructor(
                         if (!clearExisting) {
                             val isDuplicate = existingTxs.any {
                                 it.assetId == assetId && it.date == date && 
-                                it.type == type && Math.abs(it.quantity - quantity) < 0.000001
+                                it.type == type && Math.abs(it.quantity - quantity) < 0.000001 &&
+                                Math.abs(it.priceAtDate - priceAtDate) < 0.000001
                             }
                             if (isDuplicate) continue
                         }

@@ -15,7 +15,7 @@ data class AssetEntity(
 
 @Entity(
     tableName = "transactions",
-    indices = [Index(value = ["assetId", "date", "type", "quantity"], unique = true)],
+    indices = [Index(value = ["assetId", "date", "type", "quantity", "priceAtDate"], unique = true)],
     foreignKeys = [
         ForeignKey(
             entity = AssetEntity::class,
@@ -74,7 +74,7 @@ interface PortfolioDao {
     suspend fun deleteAllTransactions()
 }
 
-@Database(entities = [AssetEntity::class, TransactionEntity::class], version = 2)
+@Database(entities = [AssetEntity::class, TransactionEntity::class], version = 3)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun portfolioDao(): PortfolioDao
 }
