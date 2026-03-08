@@ -164,6 +164,7 @@ class MainActivity : ComponentActivity() {
                                 totalProfit = uiState.totalProfit,
                                 totalProfitPercentage = uiState.totalProfitPercentage,
                                 totalProfitToday = uiState.totalProfitToday,
+                                totalProfitTodayPercentage = uiState.totalProfitTodayPercentage,
                                 assets = uiState.portfolioAssets,
                                 isRefreshing = uiState.isRefreshing,
                                 importMessage = uiState.importMessage,
@@ -209,6 +210,9 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onDeleteTransaction = { tx ->
                                         viewModel.deleteTransaction(tx.id, tx.assetId)
+                                    },
+                                    onDeleteAsset = { assetToDelete ->
+                                        viewModel.deleteAsset(assetToDelete.asset.id)
                                     }
                                 )
                             }

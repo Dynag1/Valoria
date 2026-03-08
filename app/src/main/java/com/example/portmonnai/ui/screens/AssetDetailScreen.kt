@@ -44,9 +44,11 @@ fun AssetDetailScreen(
     historicalChartData: List<Pair<Long, Double>>?,
     onBack: () -> Unit,
     onEditTransaction: (Transaction) -> Unit,
-    onDeleteTransaction: (Transaction) -> Unit
+    onDeleteTransaction: (Transaction) -> Unit,
+    onDeleteAsset: (PortfolioAsset) -> Unit
 ) {
     var transactionToDelete by remember { mutableStateOf<Transaction?>(null) }
+    var showDeleteAssetDialog by remember { mutableStateOf(false) }
 
     // Delete confirmation dialog
     transactionToDelete?.let { tx ->
@@ -79,6 +81,34 @@ fun AssetDetailScreen(
         )
     }
 
+    // Asset delete confirmation dialog
+    if (showDeleteAssetDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteAssetDialog = false },
+            title = { Text("Supprimer l'actif ?") },
+            text = {
+                Text("Voulez-vous vraiment supprimer ${portfolioAsset.asset.name} et toutes ses transactions ? Cette action est irréversible.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteAsset(portfolioAsset)
+                        showDeleteAssetDialog = false
+                        onBack()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = RedHedge)
+                ) {
+                    Text("Supprimer")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAssetDialog = false }) {
+                    Text("Annuler")
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -95,6 +125,11 @@ fun AssetDetailScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showDeleteAssetDialog = true }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Supprimer l'actif", tint = RedHedge)
                     }
                 }
             )

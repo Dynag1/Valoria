@@ -59,7 +59,9 @@ class PortfolioViewModel @Inject constructor(
                         totalValue = totalValue,
                         totalProfit = totalProfit,
                         totalProfitPercentage = totalProfitPct,
-                        totalProfitToday = assets.sumOf { a -> a.profitToday }
+                        totalProfitToday = assets.sumOf { a -> a.profitToday },
+                        totalProfitTodayPercentage = if (totalValue - assets.sumOf { a -> a.profitToday } > 0)
+                            (assets.sumOf { a -> a.profitToday } / (totalValue - assets.sumOf { a -> a.profitToday })) * 100.0 else 0.0
                     )
                 }
             }
@@ -253,6 +255,7 @@ data class PortfolioUiState(
     val totalProfit: Double = 0.0,
     val totalProfitPercentage: Double = 0.0,
     val totalProfitToday: Double = 0.0,
+    val totalProfitTodayPercentage: Double = 0.0,
     val selectedAssetTransactions: List<Transaction> = emptyList(),
     val selectedAssetChartData: List<Pair<Long, Double>>? = null,
     val importMessage: String? = null,

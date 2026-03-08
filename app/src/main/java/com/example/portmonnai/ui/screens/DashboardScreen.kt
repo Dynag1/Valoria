@@ -30,6 +30,11 @@ import com.example.portmonnai.domain.model.PortfolioAsset
 import com.example.portmonnai.ui.theme.Gold
 import com.example.portmonnai.ui.theme.GreenHedge
 import com.example.portmonnai.ui.theme.RedHedge
+import androidx.compose.material.icons.filled.Sort
+
+enum class AssetSortOrder {
+    NAME, VALUE, PROFIT, PROFIT_PERCENTAGE
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,6 +43,7 @@ fun DashboardScreen(
     totalProfit: Double,
     totalProfitPercentage: Double,
     totalProfitToday: Double,
+    totalProfitTodayPercentage: Double,
     assets: List<PortfolioAsset>,
     isRefreshing: Boolean,
     importMessage: String?,
@@ -49,7 +55,18 @@ fun DashboardScreen(
     onImportMessageDismissed: () -> Unit
 ) {
     var assetToDelete by remember { mutableStateOf<PortfolioAsset?>(null) }
+    var sortOrder by remember { mutableStateOf(AssetSortOrder.VALUE) }
+    var showSortMenu by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
+
+    val sortedAssets = remember(assets, sortOrder) {
+        when (sortOrder) {
+            AssetSortOrder.NAME -> assets.sortedBy { it.asset.name }
+            AssetSortOrder.VALUE -> assets.sortedByDescending { it.totalValue }
+            AssetSortOrder.PROFIT -> assets.sortedByDescending { it.totalProfit }
+            AssetSortOrder.PROFIT_PERCENTAGE -> assets.sortedByDescending { it.profitPercentage }
+        }
+    }
 
     LaunchedEffect(importMessage) {
         if (importMessage != null) {
@@ -140,22 +157,54 @@ fun DashboardScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 item {
-                    PortfolioHeader(totalValue, totalProfit, totalProfitPercentage, totalProfitToday)
+                    PortfolioHeader(totalValue, totalProfit, totalProfitPercentage, totalProfitToday, totalProfitTodayPercentage)
                 }
 
                 item {
-                    Text(
-                        text = "Mes Actifs",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Mes Actifs",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        
+                        Box {
+                            IconButton(onClick = { showSortMenu = true }) {
+                                Icon(Icons.Default.Sort, contentDescription = "Trier", tint = Gold)
+                            }
+                            DropdownMenu(
+                                expanded = showSortMenu,
+                                onDismissRequest = { showSortMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Trier par Valeur") },
+                                    onClick = { sortOrder = AssetSortOrder.VALUE; showSortMenu = false }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Trier par Profit") },
+                                    onClick = { sortOrder = AssetSortOrder.PROFIT; showSortMenu = false }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Trier par Profit %") },
+                                    onClick = { sortOrder = AssetSortOrder.PROFIT_PERCENTAGE; showSortMenu = false }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Trier par Nom") },
+                                    onClick = { sortOrder = AssetSortOrder.NAME; showSortMenu = false }
+                                )
+                            }
+                        }
+                    }
                 }
 
-                items(assets, key = { it.asset.id }) { asset ->
-                    SwipeToDeleteAssetCard(
+                items(sortedAssets, key = { it.asset.id }) { asset ->
+                    AssetCard(
                         portfolioAsset = asset,
-                        onClick = { onAssetClick(asset) },
-                        onDeleteRequest = { assetToDelete = asset }
+                        onClick = { onAssetClick(asset) }
                     )
                 }
             }
@@ -230,7 +279,8 @@ fun PortfolioHeader(
     totalValue: Double,
     totalProfit: Double,
     totalProfitPercentage: Double,
-    totalProfitToday: Double
+    totalProfitToday: Double,
+    totalProfitTodayPercentage: Double
 ) {
     val profitColor = if (totalProfit >= 0) GreenHedge else RedHedge
     val profitTodayColor = if (totalProfitToday >= 0) GreenHedge else RedHedge
@@ -276,16 +326,22 @@ fun PortfolioHeader(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Total", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                        Text("${if (totalProfit >= 0) "+" else ""}€${formatValue(totalProfit)}", color = profitColor, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        Text("${if (totalProfitPercentage >= 0) "+" else ""}${String.format("%.2f", totalProfitPercentage)}%", color = profitColor, fontSize = 13.sp)
-                    }
-                    HorizontalDivider(modifier = Modifier.height(48.dp).width(1.dp))
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Aujourd'hui", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                        Text("${if (totalProfitToday >= 0) "+" else ""}€${formatValue(totalProfitToday)}", color = profitTodayColor, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text("Performance Aujourd'hui", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                            Text("${if (totalProfitToday >= 0) "+" else ""}€${formatValue(totalProfitToday)}", color = profitTodayColor, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Surface(shape = RoundedCornerShape(8.dp), color = profitTodayColor.copy(alpha = 0.15f)) {
+                                Text(
+                                    text = "${if (totalProfitTodayPercentage >= 0) "+" else ""}${String.format("%.2f", totalProfitTodayPercentage)}%",
+                                    color = profitTodayColor, fontWeight = FontWeight.Bold, fontSize = 12.sp,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
