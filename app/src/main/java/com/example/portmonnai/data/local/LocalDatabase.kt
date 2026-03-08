@@ -15,7 +15,6 @@ data class AssetEntity(
 
 @Entity(
     tableName = "transactions",
-    indices = [Index(value = ["assetId", "date", "type", "quantity", "priceAtDate"], unique = true)],
     foreignKeys = [
         ForeignKey(
             entity = AssetEntity::class,
@@ -37,7 +36,7 @@ data class TransactionEntity(
 
 @Dao
 interface PortfolioDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAsset(asset: AssetEntity)
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
@@ -74,7 +73,7 @@ interface PortfolioDao {
     suspend fun deleteAllTransactions()
 }
 
-@Database(entities = [AssetEntity::class, TransactionEntity::class], version = 3)
+@Database(entities = [AssetEntity::class, TransactionEntity::class], version = 4)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun portfolioDao(): PortfolioDao
 }
