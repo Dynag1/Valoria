@@ -282,18 +282,16 @@ class PortfolioRepository @Inject constructor(
         }
     }
 
-    suspend fun getAssetHistoricalPrices(assetId: String, symbol: String, type: AssetType, firstBuyDateMs: Long): List<Pair<Long, Double>> {
+    suspend fun getAssetHistoricalPrices(assetId: String, symbol: String, type: AssetType, startDateMs: Long): List<Pair<Long, Double>> {
         val result = mutableListOf<Pair<Long, Double>>()
         try {
-            // Calcul de la période en secondes
-            val period1 = firstBuyDateMs / 1000L
-            val period2 = System.currentTimeMillis() / 1000L
-            val daysDiff = ((System.currentTimeMillis() - firstBuyDateMs) / (1000 * 60 * 60 * 24)).coerceAtLeast(1)
+            val now = System.currentTimeMillis()
+            val daysDiff = ((now - startDateMs) / 86400000L).coerceAtLeast(1)
 
             val isMetal = type in listOf(AssetType.GOLD_BAR, AssetType.GOLD_INGOT, AssetType.GOLD_COIN, AssetType.METAL)
 
             if (type == AssetType.CRYPTO || isMetal) {
-                // Pour l'or physique, on requête "pax-gold" (qui réplique 1 once d'or équivalent à l'évolution de l'or), pour l'argent "kinesis-silver"
+                // CoinGecko
                 val cgId = when {
                     isMetal && assetId.contains("silver") -> "kinesis-silver"
                     isMetal -> "pax-gold"
@@ -301,7 +299,15 @@ class PortfolioRepository @Inject constructor(
                     else -> assetId
                 }
                 
-                val response = coinGeckoApi.getMarketChart(cgId, "eur", if (daysDiff > 90) "max" else daysDiff.toString())
+                // On utilise une valeur explicite en jours si possible pour forcer CG à remonter assez loin
+                val daysParam = when {
+                    daysDiff <= 1 -> "1"
+                    daysDiff <= 90 -> daysDiff.toString()
+                    daysDiff <= 365 -> "365"
+                    else -> "max"
+                }
+                
+                val response = coinGeckoApi.getMarketChart(cgId, "eur", daysParam)
                 
                 val multiplier = when (assetId) {
                     "gold_bar", "gold_ingot" -> 1.0 / 31.1035
@@ -313,36 +319,63 @@ class PortfolioRepository @Inject constructor(
                 response.prices?.forEach { point ->
                     if (point.size >= 2) {
                         val timestamp = point[0].toLong()
-                        if (timestamp >= firstBuyDateMs) {
+                        if (timestamp >= startDateMs - 3600000L) {
                             result.add(Pair(timestamp, point[1] * multiplier))
                         }
                     }
                 }
             } else {
-                // Actions, ETFs (Yahoo Finance)
-                val yahooTicker = symbol // Le Ticker Yahoo est directement stocké dans le symbol (ex: CW8.PA)
+                // Yahoo Finance
+                val yahooTicker = symbol
                 
-                // Si intervalle très long, on peut changer l'intervalle pour 1wk ou 1mo pour éviter les payload trop lourds
-                val interval = if (daysDiff > 730) "1wk" else "1d"
-                val response = yahooFinanceApi.getHistoricalChartData(yahooTicker, period1, period2, interval)
+                // Détermination de l'intervalle et de la range la plus proche
+                // On utilise une range un peu plus large (5d) pour les périodes courtes (1d, 7d)
+                // pour s'assurer d'avoir des points même si le marché était fermé
+                val (rangeParam, interval) = when {
+                    daysDiff <= 1 -> "5d" to "15m"
+                    daysDiff <= 7 -> "7d" to "1h"
+                    daysDiff <= 30 -> "1mo" to "1h"
+                    daysDiff <= 365 -> "1y" to "1d"
+                    daysDiff <= 1825 -> "5y" to "1d"
+                    else -> "max" to "1wk"
+                }
+                
+                val response = if (rangeParam != null) {
+                    yahooFinanceApi.getHistoricalChartData(yahooTicker, range = rangeParam, interval = interval)
+                } else {
+                    yahooFinanceApi.getHistoricalChartData(yahooTicker, period1 = startDateMs / 1000L, period2 = now / 1000L, interval = interval)
+                }
+
                 val chartResult = response.chart.result?.firstOrNull()
                 val timestamps = chartResult?.timestamp
                 val closes = chartResult?.indicators?.quote?.firstOrNull()?.close
 
                 if (timestamps != null && closes != null) {
+                    val tempResult = mutableListOf<Pair<Long, Double>>()
                     for (i in timestamps.indices) {
                         val tsMs = timestamps[i] * 1000L
                         val closePrice = closes.getOrNull(i)
-                        if (closePrice != null && tsMs >= firstBuyDateMs) {
-                            result.add(Pair(tsMs, closePrice))
+                        
+                        if (closePrice != null) {
+                            tempResult.add(Pair(tsMs, closePrice))
                         }
+                    }
+                    
+                    // Filtrage intelligent : si 24h et marché fermé (week-end), 
+                    // on prend au moins les derniers points dispos de la range
+                    val filtered = tempResult.filter { it.first >= startDateMs - 3600000L }
+                    if (filtered.size >= 2) {
+                        result.addAll(filtered)
+                    } else if (tempResult.size >= 2) {
+                        // Fallback : on prend les derniers points de la range (ex: les points du vendredi)
+                        result.addAll(tempResult.takeLast(50))
                     }
                 }
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        return result.sortedBy { it.first }
+        return result.sortedBy { it.first }.distinctBy { it.first }
     }
 
     suspend fun addTransaction(transaction: Transaction) {

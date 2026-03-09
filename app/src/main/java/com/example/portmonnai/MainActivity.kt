@@ -200,6 +200,8 @@ class MainActivity : ComponentActivity() {
                                     portfolioAsset = asset,
                                     transactions = uiState.selectedAssetTransactions,
                                     historicalChartData = uiState.selectedAssetChartData,
+                                    selectedFilter = uiState.selectedChartFilter,
+                                    onFilterSelected = { viewModel.changeChartFilter(it) },
                                     onBack = {
                                         viewModel.clearSelectedAssetTransactions()
                                         navController.popBackStack()

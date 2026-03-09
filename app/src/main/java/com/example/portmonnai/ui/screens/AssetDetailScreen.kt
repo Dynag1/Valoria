@@ -35,6 +35,7 @@ import com.example.portmonnai.ui.theme.RedHedge
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.example.portmonnai.ui.viewmodel.ChartFilter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,6 +43,8 @@ fun AssetDetailScreen(
     portfolioAsset: PortfolioAsset,
     transactions: List<Transaction>,
     historicalChartData: List<Pair<Long, Double>>?,
+    selectedFilter: ChartFilter,
+    onFilterSelected: (ChartFilter) -> Unit,
     onBack: () -> Unit,
     onEditTransaction: (Transaction) -> Unit,
     onDeleteTransaction: (Transaction) -> Unit,
@@ -151,9 +154,20 @@ fun AssetDetailScreen(
             item {
                 if (historicalChartData != null) {
                     if (historicalChartData.isNotEmpty()) {
-                        PerformanceChartCard(historicalChartData)
+                        PerformanceChartCard(
+                            data = historicalChartData, 
+                            transactions = transactions,
+                            selectedFilter = selectedFilter,
+                            onFilterSelected = onFilterSelected
+                        )
                     } else {
                         // Graphique non disponible ou vide
+                        PerformanceChartCard(
+                            data = emptyList(), 
+                            transactions = transactions,
+                            selectedFilter = selectedFilter,
+                            onFilterSelected = onFilterSelected
+                        )
                     }
                 } else {
                     // Chargement du graphique
@@ -344,7 +358,12 @@ fun TransactionItem(
 }
 
 @Composable
-fun PerformanceChartCard(data: List<Pair<Long, Double>>) {
+fun PerformanceChartCard(
+    data: List<Pair<Long, Double>>,
+    transactions: List<Transaction>,
+    selectedFilter: ChartFilter,
+    onFilterSelected: (ChartFilter) -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth().height(240.dp),
         shape = RoundedCornerShape(16.dp),
@@ -360,7 +379,14 @@ fun PerformanceChartCard(data: List<Pair<Long, Double>>) {
                 verticalAlignment = Alignment.Top
             ) {
                 Text(
-                    text = "Performance depuis le 1er achat",
+                    text = when(selectedFilter) {
+                        ChartFilter.H24 -> "Dernières 24h"
+                        ChartFilter.D7 -> "7 derniers jours"
+                        ChartFilter.M1 -> "Dernier mois"
+                        ChartFilter.Y1 -> "Dernière année"
+                        ChartFilter.Y5 -> "5 dernières années"
+                        ChartFilter.ALL -> "Tout (depuis 2015)"
+                    },
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
@@ -383,7 +409,7 @@ fun PerformanceChartCard(data: List<Pair<Long, Double>>) {
 
                         val priceStr = "€${formatValue(currentHoverPrice)}"
                         val pctStr = "$sign${formatValue(pct)}%"
-                        val dateStr = SimpleDateFormat("dd MMM yy HH:mm", Locale.getDefault()).format(Date(hoverPoint.first))
+                        val dateStr = SimpleDateFormat("dd/MM/yy HH:mm", Locale.getDefault()).format(Date(hoverPoint.first))
 
                         Column(horizontalAlignment = Alignment.End) {
                             Row(verticalAlignment = Alignment.Bottom) {
@@ -398,110 +424,168 @@ fun PerformanceChartCard(data: List<Pair<Long, Double>>) {
             }
 
             if (data.size < 2) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Pas assez de données", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
+                Box(modifier = Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
+                    Text("Données insuffisantes", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
                 }
-                return@Column
-            }
+            } else {
+                val minPrice = data.minOf { it.second }
+                val maxPrice = data.maxOf { it.second }
+                val minTime = data.first().first
+                val maxTime = data.last().first
 
-            val minPrice = data.minOf { it.second }
-            val maxPrice = data.maxOf { it.second }
-            val minTime = data.first().first
-            val maxTime = data.last().first
+                val range = (maxPrice - minPrice).takeIf { it > 0 } ?: 1.0
+                val timeRange = (maxTime - minTime).takeIf { it > 0 } ?: 1L
 
-            val range = (maxPrice - minPrice).takeIf { it > 0 } ?: 1.0
-            val timeRange = (maxTime - minTime).takeIf { it > 0 } ?: 1L
+                val isPositive = data.last().second >= data.first().second
+                val lineColor = if (isPositive) GreenHedge else RedHedge
 
-            val isPositive = data.last().second >= data.first().second
-            val lineColor = if (isPositive) GreenHedge else RedHedge
-
-            Canvas(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .onSizeChanged { boxWidth = it.width }
-                    .pointerInput(data) {
-                        awaitEachGesture {
-                            val down = awaitFirstDown()
-                            touchX = down.position.x
-                            do {
-                                val event = awaitPointerEvent()
-                                val move = event.changes.firstOrNull()
-                                if (move != null) {
-                                    if (move.pressed) {
-                                        touchX = move.position.x
-                                        move.consume()
-                                    } else {
-                                        touchX = null
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .onSizeChanged { boxWidth = it.width }
+                        .pointerInput(data) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown()
+                                touchX = down.position.x
+                                do {
+                                    val event = awaitPointerEvent()
+                                    val move = event.changes.firstOrNull()
+                                    if (move != null) {
+                                        if (move.pressed) {
+                                            touchX = move.position.x
+                                            move.consume()
+                                        } else {
+                                            touchX = null
+                                        }
                                     }
-                                }
-                            } while (event.changes.any { it.pressed })
-                            touchX = null
+                                } while (event.changes.any { it.pressed })
+                                touchX = null
+                            }
+                        }
+                ) {
+                    val width = size.width
+                    val height = size.height
+
+                    val path = Path()
+
+                    data.forEachIndexed { index, point ->
+                        val x = ((point.first - minTime).toFloat() / timeRange.toFloat()) * width
+                        val y = height - (((point.second - minPrice).toFloat() / range.toFloat()) * height)
+
+                        if (index == 0) {
+                            path.moveTo(x, y)
+                        } else {
+                            path.lineTo(x, y)
                         }
                     }
-            ) {
-                val width = size.width
-                val height = size.height
 
-                val path = Path()
+                    drawPath(
+                        path = path,
+                        color = lineColor,
+                        style = Stroke(width = 2.dp.toPx())
+                    )
 
-                data.forEachIndexed { index, point ->
-                    val x = ((point.first - minTime).toFloat() / timeRange.toFloat()) * width
-                    val y = height - (((point.second - minPrice).toFloat() / range.toFloat()) * height)
+                    val fillPath = Path().apply {
+                        addPath(path)
+                        lineTo(width, height)
+                        lineTo(0f, height)
+                        close()
+                    }
 
-                    if (index == 0) {
-                        path.moveTo(x, y)
-                    } else {
-                        path.lineTo(x, y)
+                    drawPath(
+                        path = fillPath,
+                        brush = Brush.verticalGradient(
+                            colors = listOf(lineColor.copy(alpha = 0.3f), Color.Transparent)
+                        )
+                    )
+
+                    // Draw transaction dots (BUY = Green, SELL = Red)
+                    transactions.forEach { tx ->
+                        if (tx.date in minTime..maxTime) {
+                            // Find closest price in historical data to keep dot on the curve
+                            val closestPoint = data.minByOrNull { kotlin.math.abs(it.first - tx.date) }
+                            if (closestPoint != null) {
+                                val txX = ((closestPoint.first - minTime).toFloat() / timeRange.toFloat()) * width
+                                val txY = height - (((closestPoint.second - minPrice).toFloat() / range.toFloat()) * height)
+                                
+                                val dotColor = if (tx.type == TransactionType.BUY) GreenHedge else RedHedge
+                                
+                                // Shadow/Outter circle for visibility
+                                drawCircle(
+                                    color = Color.Black.copy(alpha = 0.3f),
+                                    radius = 5.dp.toPx(),
+                                    center = Offset(txX, txY)
+                                )
+                                drawCircle(
+                                    color = dotColor,
+                                    radius = 4.dp.toPx(),
+                                    center = Offset(txX, txY)
+                                )
+                                drawCircle(
+                                    color = Color.White,
+                                    radius = 1.5.dp.toPx(),
+                                    center = Offset(txX, txY)
+                                )
+                            }
+                        }
+                    }
+
+                    // Optional Indicator line
+                    if (touchX != null && boxWidth > 0) {
+                        val xRatio = (touchX!! / boxWidth).coerceIn(0f, 1f)
+                        val targetTime = minTime + (xRatio * timeRange).toLong()
+                        val hoverPoint = data.minByOrNull { kotlin.math.abs(it.first - targetTime) }
+                        
+                        if (hoverPoint != null) {
+                            val px = ((hoverPoint.first - minTime).toFloat() / timeRange.toFloat()) * width
+                            val py = height - (((hoverPoint.second - minPrice).toFloat() / range.toFloat()) * height)
+
+                            drawLine(
+                                color = Color.Gray.copy(alpha = 0.5f),
+                                start = Offset(px, 0f),
+                                end = Offset(px, height),
+                                strokeWidth = 1.dp.toPx(),
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f))
+                            )
+                            drawCircle(
+                                color = lineColor,
+                                radius = 6.dp.toPx(),
+                                center = Offset(px, py)
+                            )
+                            drawCircle(
+                                color = Color.White,
+                                radius = 3.dp.toPx(),
+                                center = Offset(px, py)
+                            )
+                        }
                     }
                 }
+            }
 
-                drawPath(
-                    path = path,
-                    color = lineColor,
-                    style = Stroke(width = 2.dp.toPx())
-                )
-
-                val fillPath = Path().apply {
-                    addPath(path)
-                    lineTo(width, height)
-                    lineTo(0f, height)
-                    close()
-                }
-
-                drawPath(
-                    path = fillPath,
-                    brush = Brush.verticalGradient(
-                        colors = listOf(lineColor.copy(alpha = 0.3f), Color.Transparent)
-                    )
-                )
-
-                // Optional Indicator line
-                if (touchX != null && boxWidth > 0) {
-                    val xRatio = (touchX!! / boxWidth).coerceIn(0f, 1f)
-                    val targetTime = minTime + (xRatio * timeRange).toLong()
-                    val hoverPoint = data.minByOrNull { kotlin.math.abs(it.first - targetTime) }
-                    
-                    if (hoverPoint != null) {
-                        val px = ((hoverPoint.first - minTime).toFloat() / timeRange.toFloat()) * width
-                        val py = height - (((hoverPoint.second - minPrice).toFloat() / range.toFloat()) * height)
-
-                        drawLine(
-                            color = Color.Gray.copy(alpha = 0.5f),
-                            start = Offset(px, 0f),
-                            end = Offset(px, height),
-                            strokeWidth = 1.dp.toPx(),
-                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f))
-                        )
-                        drawCircle(
-                            color = lineColor,
-                            radius = 6.dp.toPx(),
-                            center = Offset(px, py)
-                        )
-                        drawCircle(
-                            color = Color.White,
-                            radius = 3.dp.toPx(),
-                            center = Offset(px, py)
-                        )
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Period Filters
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                ChartFilter.values().forEach { filter ->
+                    val isSelected = filter == selectedFilter
+                    Surface(
+                        onClick = { onFilterSelected(filter) },
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isSelected) Gold.copy(alpha = 0.15f) else Color.Transparent,
+                        modifier = Modifier.height(32.dp).weight(1f)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = filter.label,
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) Gold else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
                     }
                 }
             }

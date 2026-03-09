@@ -17,6 +17,15 @@ import kotlinx.coroutines.Job
 import javax.inject.Inject
 
 private const val BACKUP_FILENAME = "Valoria.val"
+ 
+enum class ChartFilter(val label: String) {
+    H24("24h"),
+    D7("7j"),
+    M1("1m"),
+    Y1("1an"),
+    Y5("5ans"),
+    ALL("Tout")
+}
 
 @HiltViewModel
 class PortfolioViewModel @Inject constructor(
@@ -110,24 +119,46 @@ class PortfolioViewModel @Inject constructor(
     }
 
     fun loadTransactionsForAsset(assetId: String) {
-        _uiState.update { it.copy(selectedAssetChartData = null) } // Réinitialiser le chart
+        _uiState.update { it.copy(selectedAssetChartData = null, selectedChartFilter = ChartFilter.ALL) }
         repository.getTransactionsForAsset(assetId)
             .onEach { txList ->
                 _uiState.update { it.copy(selectedAssetTransactions = txList) }
-                
-                // Charger le graphique en arrière-plan
-                viewModelScope.launch {
-                    val asset = _uiState.value.portfolioAssets.find { it.asset.id == assetId }?.asset
-                    if (asset != null && txList.isNotEmpty()) {
-                        val firstBuy = txList.filter { it.type == com.example.portmonnai.domain.model.TransactionType.BUY }.minOfOrNull { it.date }
-                        if (firstBuy != null) {
-                            val chart = repository.getAssetHistoricalPrices(asset.id, asset.symbol, asset.type, firstBuy)
-                            _uiState.update { it.copy(selectedAssetChartData = chart) }
-                        }
-                    }
-                }
+                loadChartData(assetId, _uiState.value.selectedChartFilter, txList)
             }
             .launchIn(viewModelScope)
+    }
+
+    fun changeChartFilter(filter: ChartFilter) {
+        if (_uiState.value.selectedChartFilter == filter) return
+        
+        val assetId = _uiState.value.selectedAssetTransactions.firstOrNull()?.assetId ?: return
+        _uiState.update { it.copy(selectedChartFilter = filter, selectedAssetChartData = null) }
+        loadChartData(assetId, filter, _uiState.value.selectedAssetTransactions)
+    }
+
+    private fun loadChartData(assetId: String, filter: ChartFilter, txList: List<Transaction>) {
+        viewModelScope.launch {
+            val asset = _uiState.value.portfolioAssets.find { it.asset.id == assetId }?.asset
+            
+            if (asset != null) {
+                val now = System.currentTimeMillis()
+                val MS_IN_DAY = 86400000L
+                val startDateMs = when (filter) {
+                    ChartFilter.H24 -> now - MS_IN_DAY
+                    ChartFilter.D7 -> now - (7 * MS_IN_DAY)
+                    ChartFilter.M1 -> now - (30 * MS_IN_DAY)
+                    ChartFilter.Y1 -> now - (365 * MS_IN_DAY)
+                    ChartFilter.Y5 -> now - (5 * 365 * MS_IN_DAY)
+                    ChartFilter.ALL -> {
+                        // Remonter à début 2015 (environ 11 ans)
+                        now - (11 * 365 * MS_IN_DAY)
+                    }
+                }
+                
+                val chart = repository.getAssetHistoricalPrices(asset.id, asset.symbol, asset.type, startDateMs)
+                _uiState.update { it.copy(selectedAssetChartData = chart) }
+            }
+        }
     }
 
     fun clearSelectedAssetTransactions() {
@@ -258,6 +289,7 @@ data class PortfolioUiState(
     val totalProfitTodayPercentage: Double = 0.0,
     val selectedAssetTransactions: List<Transaction> = emptyList(),
     val selectedAssetChartData: List<Pair<Long, Double>>? = null,
+    val selectedChartFilter: ChartFilter = ChartFilter.ALL,
     val importMessage: String? = null,
     val error: String? = null
 )

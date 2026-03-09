@@ -50,8 +50,9 @@ interface YahooFinanceApi {
     @GET("v8/finance/chart/{ticker}")
     suspend fun getHistoricalChartData(
         @retrofit2.http.Path("ticker") ticker: String,
-        @Query("period1") period1: Long,
-        @Query("period2") period2: Long,
+        @Query("period1") period1: Long? = null,
+        @Query("period2") period2: Long? = null,
+        @Query("range") range: String? = null,
         @Query("interval") interval: String = "1d"
     ): YahooChartResponse
 
