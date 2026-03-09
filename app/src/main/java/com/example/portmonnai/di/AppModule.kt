@@ -61,7 +61,7 @@ object AppModule {
     @Singleton
     fun provideYahooFinanceApi(client: okhttp3.OkHttpClient): com.example.portmonnai.data.remote.YahooFinanceApi {
         return Retrofit.Builder()
-            .baseUrl("https://query1.finance.yahoo.com/")
+            .baseUrl("https://query2.finance.yahoo.com/")
             .client(client)
             .addConverterFactory(GsonConverterFactory.create())
             .build()

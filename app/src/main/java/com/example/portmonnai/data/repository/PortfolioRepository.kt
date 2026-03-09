@@ -1,11 +1,14 @@
 package com.example.portmonnai.data.repository
 
+import android.util.Log
 import com.example.portmonnai.data.local.AssetEntity
 import com.example.portmonnai.data.local.AppDatabase
 import com.example.portmonnai.data.local.PortfolioDao
 import com.example.portmonnai.data.local.TransactionEntity
 import com.example.portmonnai.data.remote.CoinGeckoApi
+import com.example.portmonnai.data.remote.YahooFinanceApi
 import com.example.portmonnai.domain.model.*
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -13,269 +16,195 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import androidx.room.withTransaction
 
-// IDs spéciaux pour les métaux physiques (pas de ticker Yahoo standard)
-private val METAL_IDS = setOf(
-    "gold_bar", "gold_ingot", "gold_coin_napoleon", "silver_bar"
-)
-
-// Tickers Yahoo Finance pour les métaux
-private val METAL_TICKERS = mapOf(
-    "gold_bar" to "XAUEUR=X",
-    "gold_ingot" to "XAUEUR=X",
-    "gold_coin_napoleon" to "XAUEUR=X",
-    "silver_bar" to "XAGEUR=X"
-)
-
-@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 @Singleton
 class PortfolioRepository @Inject constructor(
     private val database: AppDatabase,
     private val coinGeckoApi: CoinGeckoApi,
-    private val yahooFinanceApi: com.example.portmonnai.data.remote.YahooFinanceApi
+    private val yahooFinanceApi: YahooFinanceApi
 ) {
     private val portfolioDao = database.portfolioDao()
     private val syncMutex = Mutex()
+    private val priceMutex = Mutex()
+    private val chartMutex = Mutex()
+    private val refreshFlow = MutableStateFlow(0)
+
     private val cachedPrices = mutableMapOf<String, PriceData>()
-    private val refreshTrigger = MutableSharedFlow<Unit>(replay = 1).apply { tryEmit(Unit) }
+    private var lastFetchTime: Long = 0
+    private val CACHE_DURATION = 5 * 60 * 1000L
+
+    private val chartCache = mutableMapOf<String, Pair<Long, List<Pair<Long, Double>>>>()
 
     fun requestRefresh() {
-        refreshTrigger.tryEmit(Unit)
+        refreshFlow.update { it + 1 }
     }
 
     fun getPortfolioAssets(): Flow<List<PortfolioAsset>> {
-        val pricesFlow = refreshTrigger.flatMapLatest {
-            flow {
-                while (true) {
-                    try {
-                        emit(fetchCurrentPrices())
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                    kotlinx.coroutines.delay(60000)
-                }
-            }
-        }
-
         return combine(
             portfolioDao.getAllAssets(),
             portfolioDao.getAllTransactions(),
-            pricesFlow
-        ) { assets, transactions, prices ->
-            assets.map { entity ->
-                val assetTransactions = transactions.filter { it.assetId == entity.id }
-                var currentQty = 0.0
-                var totalCostBasis = 0.0
-                var realizedProfit = 0.0
-
-                // Traitement chronologique des transactions pour un PRU (Prix de Revient Unitaire) exact
-                for (tx in assetTransactions.sortedBy { it.date }) {
-                    if (tx.type == TransactionType.BUY) {
-                        currentQty += tx.quantity
-                        totalCostBasis += (tx.quantity * tx.priceAtDate) + tx.fees
-                    } else if (tx.type == TransactionType.SELL) {
-                        // Le PRU au moment de la vente
-                        val currentPru = if (currentQty > 0) totalCostBasis / currentQty else 0.0
-                        // Le coût de ce qui est vendu part du CostBasis
-                        val costOfSold = tx.quantity * currentPru
-                        totalCostBasis -= costOfSold
-                        if (totalCostBasis < 0) totalCostBasis = 0.0
-                        
-                        currentQty -= tx.quantity
-                        
-                        // Plus-value réalisée sur cette vente : (Prix vente - PRU) - frais
-                        val revenue = (tx.quantity * tx.priceAtDate) - tx.fees
-                        realizedProfit += (revenue - costOfSold)
-                    }
-                }
-
-                // PRU moyen actuel des actifs restants
-                val avgPrice = if (currentQty > 0) totalCostBasis / currentQty else 0.0
-
-                val priceData = prices[entity.id]
-                val currentPrice = priceData?.price ?: 0.0
-                
-                val totalValue = currentQty * currentPrice
-                
-                // Plus-value latente (sur ce que l'on possède encore) = Valeur actuelle - Coût de revient actuel
-                val unrealizedProfit = totalValue - totalCostBasis
-                
-                // Bénéfice total = Gains encaissés (Ventes) + Gains virtuels (Actuels)
-                val totalProfit = realizedProfit + unrealizedProfit
-                
-                // % de bénéfice (basé sur le total réellement dépensé pour acheter ces actifs)
-                val totalAllTimeCost = assetTransactions.filter { it.type == TransactionType.BUY }
-                    .sumOf { it.quantity * it.priceAtDate + it.fees }
-                val profitPct = if (totalAllTimeCost > 0) (totalProfit / totalAllTimeCost) * 100.0 else 0.0
-
-                val change24h = priceData?.change24h ?: 0.0
-                val profitToday = totalValue * (change24h / 100)
-
-                PortfolioAsset(
-                    asset = Asset(entity.id, entity.name, entity.symbol, entity.type, currentPrice, change24h),
-                    totalQuantity = currentQty,
-                    averageBuyPrice = avgPrice,
-                    totalValue = totalValue,
-                    totalProfit = totalProfit,
-                    profitPercentage = profitPct,
-                    profitToday = profitToday,
-                    profitTodayPercentage = change24h
-                )
-            }
+            refreshFlow
+        ) { assets, transactions, refreshCount ->
+            Triple(assets, transactions, refreshCount)
+        }
+        .debounce(300)
+        .mapLatest { (assets, transactions, refreshCount) ->
+            val prices = fetchCurrentPrices(force = refreshCount > 0)
+            buildPortfolioList(assets, transactions, prices)
         }
     }
-    
+
     suspend fun getPortfolioAssetsOnce(): List<PortfolioAsset> {
         return getPortfolioAssets().first()
     }
 
+    private fun buildPortfolioList(
+        assets: List<AssetEntity>,
+        transactions: List<TransactionEntity>,
+        prices: Map<String, PriceData>
+    ): List<PortfolioAsset> {
+        return assets.map { entity ->
+            val assetTransactions = transactions.filter { it.assetId == entity.id }
+            var currentQty = 0.0
+            var totalCostBasis = 0.0
+            var realizedProfit = 0.0
+
+            for (tx in assetTransactions.sortedBy { it.date }) {
+                if (tx.type == TransactionType.BUY) {
+                    currentQty += tx.quantity
+                    totalCostBasis += (tx.quantity * tx.priceAtDate) + tx.fees
+                } else if (tx.type == TransactionType.SELL) {
+                    val currentPru = if (currentQty > 0) totalCostBasis / currentQty else 0.0
+                    val costOfSold = tx.quantity * currentPru
+                    totalCostBasis -= costOfSold
+                    if (totalCostBasis < 0) totalCostBasis = 0.0
+                    currentQty -= tx.quantity
+                    val revenue = (tx.quantity * tx.priceAtDate) - tx.fees
+                    realizedProfit += (revenue - costOfSold)
+                }
+            }
+
+            val avgPrice = if (currentQty > 0) totalCostBasis / currentQty else 0.0
+            val priceData = prices[entity.id]
+            val currentPrice = priceData?.price ?: 0.0
+            val totalValue = currentQty * currentPrice
+            val totalProfit = realizedProfit + (totalValue - totalCostBasis)
+            
+            val totalAllTimeCost = assetTransactions.filter { it.type == TransactionType.BUY }
+                .sumOf { it.quantity * it.priceAtDate + it.fees }
+            val profitPct = if (totalAllTimeCost > 0) (totalProfit / totalAllTimeCost) * 100.0 else 0.0
+
+            val change24h = priceData?.change24h ?: 0.0
+            val profitToday = totalValue * (change24h / 100.0)
+
+            PortfolioAsset(
+                asset = Asset(entity.id, entity.name, entity.symbol, entity.type, currentPrice, change24h),
+                totalQuantity = currentQty,
+                averageBuyPrice = avgPrice,
+                totalValue = totalValue,
+                totalProfit = totalProfit,
+                profitPercentage = profitPct,
+                profitToday = profitToday,
+                profitTodayPercentage = change24h
+            )
+        }
+    }
+
     data class PriceData(val price: Double, val change24h: Double = 0.0)
- 
-    suspend fun fetchCurrentPrices(): Map<String, PriceData> {
-        val result = mutableMapOf<String, PriceData>()
 
-        // 1. Fetch EUR/USD rate
-        var usdEurRate = 1.08 // Fallback raisonnable
+    suspend fun fetchCurrentPrices(force: Boolean = false): Map<String, PriceData> = priceMutex.withLock {
+        val now = System.currentTimeMillis()
+        if (!force && cachedPrices.isNotEmpty() && (now - lastFetchTime) < CACHE_DURATION) {
+            return@withLock cachedPrices.toMap()
+        }
+
+        Log.d("PriceFetch", "Refreshing price cache...")
+        
+        var usdEurRate = 0.95
         try {
-            val eurUsdResponse = yahooFinanceApi.getChartData("EURUSD=X")
-            val price = eurUsdResponse.chart.result?.firstOrNull()?.meta?.regularMarketPrice
-            if (price != null && price > 0) usdEurRate = price
-        } catch (e: Exception) { e.printStackTrace() }
+            val usdEurResp = yahooFinanceApi.getChartData("EURUSD=X")
+            val meta = usdEurResp.chart.result?.firstOrNull()?.meta
+            if (meta != null && meta.regularMarketPrice > 0) {
+                usdEurRate = meta.regularMarketPrice
+            }
+        } catch (e: Exception) { Log.e("PriceFetch", "EUR/USD failed", e) }
 
-        // 2. Fetch cryptos from CoinGecko
         try {
             val dbAssets = portfolioDao.getAllAssetsOnce()
             val cryptoIds = dbAssets.filter { it.type == AssetType.CRYPTO }.map { it.id }
                 .plus(listOf("bitcoin", "ethereum", "cardano", "solana", "pax-gold"))
-                .distinct()
-                .joinToString(",")
+                .distinct().joinToString(",")
 
             if (cryptoIds.isNotEmpty()) {
                 val cryptoPrices = coinGeckoApi.getPrices(cryptoIds)
                 cryptoPrices.forEach { (id, data) ->
-                    result[id] = PriceData(
-                        data["eur"] ?: 0.0,
-                        data["eur_24h_change"] ?: 0.0
-                    )
+                    cachedPrices[id] = PriceData(data["eur"] ?: 0.0, data["eur_24h_change"] ?: 0.0)
                 }
             }
-        } catch (e: Exception) { e.printStackTrace() }
+        } catch (e: Exception) { Log.e("PriceFetch", "Crypto failed", e) }
 
-        // 3. Fetch metals
-        var goldSpotEur = 0.0
-        var goldChange24h = 0.0
-        
-        // Try Yahoo Spot XAUEUR=X
+        coroutineScope {
+            val metalQueries = listOf("XAUEUR=X", "XAGEUR=X", "GC=F", "SI=F")
+            metalQueries.map { ticker ->
+                async {
+                    try {
+                        val resp = yahooFinanceApi.getChartData(ticker)
+                        val meta = resp.chart.result?.firstOrNull()?.meta ?: return@async
+                        val price = meta.regularMarketPrice
+                        val prevClose = meta.chartPreviousClose
+                        val change = if (prevClose > 0) ((price - prevClose) / prevClose) * 100.0 else 0.0
+                        
+                        if (ticker.contains("EUR=X")) {
+                            if (ticker.startsWith("XAU")) {
+                                val gramPrice = price / 31.1035
+                                cachedPrices["gold_bar"] = PriceData(gramPrice, change)
+                                cachedPrices["gold_ingot"] = PriceData(gramPrice, change)
+                                cachedPrices["gold_coin_napoleon"] = PriceData(gramPrice * 5.806, change)
+                                cachedPrices["pax-gold"] = PriceData(price, change)
+                            } else {
+                                cachedPrices["silver_bar"] = PriceData(price / 31.1035, change)
+                            }
+                        } else if (ticker == "GC=F" && !cachedPrices.containsKey("gold_bar")) {
+                            val gramPrice = (price * usdEurRate) / 31.1035
+                            cachedPrices["gold_bar"] = PriceData(gramPrice, change)
+                            cachedPrices["gold_ingot"] = PriceData(gramPrice, change)
+                            cachedPrices["gold_coin_napoleon"] = PriceData(gramPrice * 5.806, change)
+                            cachedPrices["pax-gold"] = PriceData(price * usdEurRate, change)
+                        } else if (ticker == "SI=F" && !cachedPrices.containsKey("silver_bar")) {
+                            cachedPrices["silver_bar"] = PriceData((price * usdEurRate) / 31.1035, change)
+                        }
+                    } catch (e: Exception) { }
+                }
+            }.awaitAll()
+        }
+
         try {
-            val goldResp = yahooFinanceApi.getChartData("XAUEUR=X")
-            val goldMeta = goldResp.chart.result?.firstOrNull()?.meta
-            if (goldMeta != null && goldMeta.regularMarketPrice > 0) {
-                goldSpotEur = goldMeta.regularMarketPrice
-                val prevClose = goldMeta.chartPreviousClose
-                goldChange24h = if (prevClose > 0) ((goldSpotEur - prevClose) / prevClose) * 100 else 0.0
+            val allDbAssets = portfolioDao.getAllAssetsOnce()
+            val stockAssets = allDbAssets.filter { it.type == AssetType.STOCK || it.type == AssetType.ETF }
+                .filter { it.symbol.isNotBlank() }
+                .distinctBy { it.symbol }
+
+            coroutineScope {
+                stockAssets.map { asset ->
+                    async {
+                        try {
+                            val resp = yahooFinanceApi.getChartData(asset.symbol)
+                            val meta = resp.chart.result?.firstOrNull()?.meta ?: return@async
+                            var price = meta.regularMarketPrice
+                            val prevClose = meta.chartPreviousClose
+                            val change = if (prevClose > 0) ((price - prevClose) / prevClose) * 100.0 else 0.0
+                            if (meta.currency == "USD") price *= usdEurRate
+                            allDbAssets.filter { it.symbol == asset.symbol }.forEach { 
+                                cachedPrices[it.id] = PriceData(price, change)
+                            }
+                        } catch (e: Exception) { }
+                    }
+                }.awaitAll()
             }
-        } catch (e: Exception) { e.printStackTrace() }
+        } catch (e: Exception) { }
 
-        // Try Yahoo Futures GC=F (USD) if spot failed
-        if (goldSpotEur <= 0.0) {
-            try {
-                val goldResp = yahooFinanceApi.getChartData("GC=F")
-                val goldMeta = goldResp.chart.result?.firstOrNull()?.meta
-                if (goldMeta != null && goldMeta.regularMarketPrice > 0) {
-                    goldSpotEur = goldMeta.regularMarketPrice / usdEurRate
-                    val prevClose = goldMeta.chartPreviousClose
-                    goldChange24h = if (prevClose > 0) ((goldMeta.regularMarketPrice - prevClose) / prevClose) * 100 else 0.0
-                }
-            } catch (e: Exception) { e.printStackTrace() }
-        }
-
-        // Final Fallback: CoinGecko PAX Gold
-        if (goldSpotEur <= 0.0) {
-            val paxGoldData = result["pax-gold"]
-            if (paxGoldData != null && paxGoldData.price > 0) {
-                goldSpotEur = paxGoldData.price
-                goldChange24h = paxGoldData.change24h
-            }
-        }
-
-        if (goldSpotEur > 0) {
-            val gramPrice = goldSpotEur / 31.1035
-            result["gold_bar"] = PriceData(gramPrice, goldChange24h)
-            result["gold_ingot"] = PriceData(gramPrice, goldChange24h)
-            result["gold_coin_napoleon"] = PriceData(gramPrice * 5.806, goldChange24h)
-        }
-
-        // Silver
-        var silverSpotEur = 0.0
-        var silverChange24h = 0.0
-        try {
-            val silverResp = yahooFinanceApi.getChartData("XAGEUR=X")
-            val silverMeta = silverResp.chart.result?.firstOrNull()?.meta
-            if (silverMeta != null && silverMeta.regularMarketPrice > 0) {
-                silverSpotEur = silverMeta.regularMarketPrice
-                val prevClose = silverMeta.chartPreviousClose
-                silverChange24h = if (prevClose > 0) ((silverSpotEur - prevClose) / prevClose) * 100 else 0.0
-            }
-        } catch (e: Exception) { e.printStackTrace() }
-
-        if (silverSpotEur <= 0.0) {
-            try {
-                val silverResp = yahooFinanceApi.getChartData("SI=F")
-                val silverMeta = silverResp.chart.result?.firstOrNull()?.meta
-                if (silverMeta != null && silverMeta.regularMarketPrice > 0) {
-                    silverSpotEur = silverMeta.regularMarketPrice / usdEurRate
-                    val prevClose = silverMeta.chartPreviousClose
-                    silverChange24h = if (prevClose > 0) ((silverMeta.regularMarketPrice - prevClose) / prevClose) * 100 else 0.0
-                }
-            } catch (e: Exception) { e.printStackTrace() }
-        }
-
-        if (silverSpotEur > 0) {
-            result["silver_bar"] = PriceData(silverSpotEur / 31.1035, silverChange24h)
-        }
-
-        // 4. Fetch stocks/ETFs via Yahoo Finance en utilisant directement le symbole de l'actif
-        //    Le symbole stocké en base EST le ticker Yahoo (ex: HO.PA, CW8.PA, AAPL, etc.)
-        val dbAssets = try { portfolioDao.getAllAssetsOnce() } catch (e: Exception) { emptyList() }
-        val stockAssets = dbAssets.filter {
-            it.type in listOf(AssetType.STOCK, AssetType.ETF) && it.symbol.isNotBlank()
-        }
-
-        for (asset in stockAssets) {
-            if (result.containsKey(asset.id)) continue // déjà fetchée (ex: crypto)
-            try {
-                val response = yahooFinanceApi.getChartData(asset.symbol)
-                val meta = response.chart.result?.firstOrNull()?.meta ?: continue
-                var price = meta.regularMarketPrice
-                val prevClose = meta.chartPreviousClose
-
-                // Conversion USD → EUR si nécessaire
-                if (meta.currency == "USD") price /= usdEurRate
-
-                if (!price.isNaN() && !price.isInfinite() && price > 0) {
-                    val changePct = if (prevClose > 0 && !prevClose.isNaN())
-                        ((meta.regularMarketPrice - prevClose) / prevClose) * 100.0 else 0.0
-                    result[asset.id] = PriceData(price, if (changePct.isNaN()) 0.0 else changePct)
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-
-        // 5. Update cache and return merged results
-        result.forEach { (id, data) ->
-            if (data.price > 0) {
-                cachedPrices[id] = data
-            }
-        }
-        
-        // Merge with cache for missing items
-        cachedPrices.forEach { (id, data) ->
-            if (!result.containsKey(id)) {
-                result[id] = data
-            }
-        }
-
-        return result
+        lastFetchTime = now
+        return@withLock cachedPrices.toMap()
     }
 
     fun getTransactionsForAsset(assetId: String): Flow<List<Transaction>> {
@@ -286,103 +215,131 @@ class PortfolioRepository @Inject constructor(
         }
     }
 
-    suspend fun getAssetHistoricalPrices(assetId: String, symbol: String, type: AssetType, startDateMs: Long): List<Pair<Long, Double>> {
+    suspend fun getAssetHistoricalPrices(assetId: String, symbol: String, type: AssetType, startDateMs: Long): List<Pair<Long, Double>> = chartMutex.withLock {
+        val bucketedStart = (startDateMs / 900000L) * 900000L
+        val cacheKey = "${assetId}_${bucketedStart}"
+        
+        val cached = chartCache[cacheKey]
+        if (cached != null && (System.currentTimeMillis() - cached.first) < 15 * 60 * 1000L) {
+            return@withLock cached.second
+        }
+
         val result = mutableListOf<Pair<Long, Double>>()
-        try {
-            val now = System.currentTimeMillis()
-            val daysDiff = ((now - startDateMs) / 86400000L).coerceAtLeast(1)
+        val now = System.currentTimeMillis()
+        val daysDiff = ((now - startDateMs) / 86400000L).coerceAtLeast(1)
+        val isMetal = type in listOf(AssetType.GOLD_BAR, AssetType.GOLD_INGOT, AssetType.GOLD_COIN, AssetType.METAL)
 
-            val isMetal = type in listOf(AssetType.GOLD_BAR, AssetType.GOLD_INGOT, AssetType.GOLD_COIN, AssetType.METAL)
+        var primarySourceFailed = false
 
-            if (type == AssetType.CRYPTO || isMetal) {
-                // CoinGecko
-                val cgId = when {
-                    isMetal && assetId.contains("silver") -> "kinesis-silver"
-                    isMetal -> "pax-gold"
-                    assetId == "pax-gold" -> "pax-gold"
-                    else -> assetId
-                }
-                
-                // On utilise une valeur explicite en jours si possible pour forcer CG à remonter assez loin
-                val daysParam = when {
-                    daysDiff <= 1 -> "1"
-                    daysDiff <= 90 -> daysDiff.toString()
-                    daysDiff <= 365 -> "365"
-                    else -> "max"
-                }
-                
-                val response = coinGeckoApi.getMarketChart(cgId, "eur", daysParam)
-                
-                val multiplier = when (assetId) {
-                    "gold_bar", "gold_ingot" -> 1.0 / 31.1035
-                    "gold_coin_napoleon" -> (1.0 / 31.1035) * 5.806
-                    "silver_bar" -> 1.0 / 31.1035
-                    else -> 1.0
-                }
-
-                response.prices?.forEach { point ->
-                    if (point.size >= 2) {
-                        val timestamp = point[0].toLong()
-                        if (timestamp >= startDateMs - 3600000L) {
-                            result.add(Pair(timestamp, point[1] * multiplier))
+        if (type == AssetType.CRYPTO || isMetal) {
+            // ESSAI COINGECKO EN PREMIER
+            var retryCount = 0
+            var success = false
+            while (retryCount < 2 && !success) {
+                try {
+                    val cgId = when {
+                        isMetal && (assetId.contains("silver") || symbol.contains("XAG")) -> "kinesis-silver"
+                        isMetal -> "pax-gold"
+                        else -> assetId.trim().lowercase()
+                    }
+                    val daysParam = when {
+                        daysDiff <= 1 -> "1"
+                        daysDiff <= 7 -> "7"
+                        daysDiff <= 30 -> "30"
+                        else -> "365"
+                    }
+                    Log.d("ChartData", "CG: Fetching $cgId days=$daysParam")
+                    val response = coinGeckoApi.getMarketChart(cgId, "eur", daysParam)
+                    val multiplier = when (assetId) {
+                        "gold_bar", "gold_ingot" -> 1.0 / 31.1035
+                        "gold_coin_napoleon" -> (1.0 / 31.1035) * 5.806
+                        "silver_bar" -> 1.0 / 31.1035
+                        else -> 1.0
+                    }
+                    response.prices?.forEach { point ->
+                        if (point.size >= 2) {
+                            val timestamp = (point[0] as? Number)?.toLong() ?: 0L
+                            val price = (point[1] as? Number)?.toDouble() ?: 0.0
+                            result.add(Pair(timestamp, price * multiplier))
                         }
                     }
+                    if (result.size >= 2) success = true
+                } catch (e: Exception) {
+                    if (e.toString().contains("429")) {
+                        retryCount++
+                        Log.w("ChartData", "CG: 429, retry $retryCount")
+                        delay(2000)
+                    } else { primarySourceFailed = true; break }
                 }
-            } else {
-                // Yahoo Finance
-                val yahooTicker = symbol
-                
-                // Détermination de l'intervalle et de la range la plus proche
-                // On utilise une range un peu plus large (5d) pour les périodes courtes (1d, 7d)
-                // pour s'assurer d'avoir des points même si le marché était fermé
+            }
+            if (!success) primarySourceFailed = true
+        }
+
+        // FALLBACK YAHOO OU SOURCE PRIMAIRE YAHOO
+        if (type == AssetType.STOCK || type == AssetType.ETF || primarySourceFailed) {
+            try {
+                // Si c'est un fallback pour crypto/métal, on ajuste le ticker
+                val ticker = if (primarySourceFailed && (type == AssetType.CRYPTO || isMetal)) {
+                    when {
+                        isMetal && symbol.contains("XAU") -> "XAUEUR=X"
+                        isMetal && symbol.contains("XAG") -> "XAGEUR=X"
+                        symbol.contains("-") -> symbol.uppercase()
+                        else -> "${symbol.uppercase()}-EUR"
+                    }
+                } else symbol
+
                 val (rangeParam, interval) = when {
-                    daysDiff <= 1 -> "5d" to "15m"
+                    daysDiff <= 1 -> "2d" to "15m"
                     daysDiff <= 7 -> "7d" to "1h"
                     daysDiff <= 30 -> "1mo" to "1h"
-                    daysDiff <= 365 -> "1y" to "1d"
-                    daysDiff <= 1825 -> "5y" to "1d"
-                    else -> "max" to "1wk"
-                }
-                
-                val response = if (rangeParam != null) {
-                    yahooFinanceApi.getHistoricalChartData(yahooTicker, range = rangeParam, interval = interval)
-                } else {
-                    yahooFinanceApi.getHistoricalChartData(yahooTicker, period1 = startDateMs / 1000L, period2 = now / 1000L, interval = interval)
+                    else -> "1y" to "1d"
                 }
 
+                Log.d("ChartData", "Yahoo: Fetching $ticker range=$rangeParam")
+                val response = yahooFinanceApi.getHistoricalChartData(ticker, range = rangeParam, interval = interval)
                 val chartResult = response.chart.result?.firstOrNull()
                 val timestamps = chartResult?.timestamp
                 val closes = chartResult?.indicators?.quote?.firstOrNull()?.close
 
                 if (timestamps != null && closes != null) {
-                    val tempResult = mutableListOf<Pair<Long, Double>>()
+                    val batch = mutableListOf<Pair<Long, Double>>()
                     for (i in timestamps.indices) {
                         val tsMs = timestamps[i] * 1000L
                         val closePrice = closes.getOrNull(i)
-                        
-                        if (closePrice != null) {
-                            tempResult.add(Pair(tsMs, closePrice))
+                        if (closePrice != null) batch.add(Pair(tsMs, closePrice))
+                    }
+                    // On prend tout sans filtrer par startDate pour contrer les problèmes de fuseau/clocks
+                    if (batch.size >= 2) {
+                        if (result.isEmpty()) result.addAll(batch)
+                        else {
+                            // Si on a déjà des points CG, on ne mélange pas forcément, 
+                            // mais ici primarySourceFailed est true donc result est vide ou pauvre.
+                            result.clear()
+                            result.addAll(batch)
                         }
                     }
-                    
-                    // Filtrage intelligent : si 24h et marché fermé (week-end), 
-                    // on prend au moins les derniers points dispos de la range
-                    val filtered = tempResult.filter { it.first >= startDateMs - 3600000L }
-                    if (filtered.size >= 2) {
-                        result.addAll(filtered)
-                    } else if (tempResult.size >= 2) {
-                        // Fallback : on prend les derniers points de la range (ex: les points du vendredi)
-                        result.addAll(tempResult.takeLast(50))
-                    }
                 }
+            } catch (e: Exception) {
+                Log.e("ChartData", "Yahoo failure for $symbol: ${e.message}")
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
-        return result.sortedBy { it.first }.distinctBy { it.first }
+
+        // FILTRAGE FINAL : Si on a des données mais elles sont toutes AVANT startDateMs, on garde les 100 dernières
+        // pour que l'utilisateur voit QUELQUE CHOSE.
+        val sorted = result.sortedBy { it.first }.distinctBy { it.first }
+        val finalResult = if (sorted.size >= 2) {
+            val filtered = sorted.filter { it.first >= startDateMs - 3600000L }
+            if (filtered.size >= 2) filtered else sorted.takeLast(100)
+        } else sorted
+
+        Log.d("ChartData", "Finished $assetId, points: ${finalResult.size}")
+        if (finalResult.size >= 2) {
+            chartCache[cacheKey] = Pair(System.currentTimeMillis(), finalResult)
+        }
+        return@withLock finalResult
     }
 
-    suspend fun addTransaction(transaction: Transaction) {
+    suspend fun addTransaction(transaction: Transaction) = syncMutex.withLock {
         portfolioDao.insertTransaction(
             TransactionEntity(
                 assetId = transaction.assetId,
@@ -395,144 +352,82 @@ class PortfolioRepository @Inject constructor(
         )
     }
 
-    suspend fun updateTransaction(transaction: Transaction) {
+    suspend fun updateTransaction(transaction: Transaction) = syncMutex.withLock {
         portfolioDao.updateTransaction(
             TransactionEntity(
-                id = transaction.id,
-                assetId = transaction.assetId,
-                type = transaction.type,
-                quantity = transaction.quantity,
-                priceAtDate = transaction.priceAtDate,
-                date = transaction.date,
-                fees = transaction.fees
+                id = transaction.id, assetId = transaction.assetId, type = transaction.type,
+                quantity = transaction.quantity, priceAtDate = transaction.priceAtDate,
+                date = transaction.date, fees = transaction.fees
             )
         )
     }
 
-    suspend fun deleteTransaction(transactionId: Long, assetId: String) {
-        portfolioDao.deleteTransaction(
-            TransactionEntity(
-                id = transactionId,
-                assetId = assetId,
-                type = TransactionType.BUY,
-                quantity = 0.0,
-                priceAtDate = 0.0,
-                date = 0,
-                fees = 0.0
-            )
-        )
+    suspend fun deleteTransaction(transactionId: Long, assetId: String) = syncMutex.withLock {
+        portfolioDao.deleteTransaction(TransactionEntity(id = transactionId, assetId = assetId, type = TransactionType.BUY, quantity = 0.0, priceAtDate = 0.0, date = 0, fees = 0.0))
     }
 
-    suspend fun deleteAsset(assetId: String) {
+    suspend fun deleteAsset(assetId: String) = syncMutex.withLock {
         portfolioDao.deleteAsset(assetId)
     }
 
-    suspend fun getAssetPrice(assetId: String): Double? {
-        val prices = fetchCurrentPrices()
-        return prices[assetId]?.price
-    }
+    suspend fun getAssetPrice(assetId: String): Double? = fetchCurrentPrices()[assetId]?.price
 
-    /**
-     * Recherche d'actifs : cryptos via CoinGecko + actions/ETFs via Yahoo Finance Search.
-     * Le symbole retourné pour les actions/ETFs est directement le ticker Yahoo (ex: HO.PA).
-     */
     suspend fun searchAssets(query: String): List<Asset> {
         if (query.length < 2) return emptyList()
-
         return try {
-            // Recherche parallèle CoinGecko + Yahoo
-            val cryptosDeferred = try {
-                val response = coinGeckoApi.searchCoins(query)
-                response.coins.take(3).map {
+            val cryptos = try {
+                coinGeckoApi.searchCoins(query).coins.take(3).map {
                     Asset(it.id, it.name, it.symbol.uppercase(), AssetType.CRYPTO)
                 }
             } catch (e: Exception) { emptyList() }
 
-            // Recherche Yahoo Finance Search — retourne actions, ETFs, etc.
             val yahooResults = try {
-                val response = yahooFinanceApi.searchTicker(query)
-                response.quotes
-                    ?.filter { it.quoteType in listOf("EQUITY", "ETF", "MUTUALFUND") }
+                yahooFinanceApi.searchTicker(query).quotes?.filter { it.quoteType in listOf("EQUITY", "ETF", "MUTUALFUND", "CRYPTOCURRENCY") }
                     ?.take(7)
                     ?.map { quote ->
                         val name = quote.longname ?: quote.shortname ?: quote.symbol
-                        val type = when (quote.quoteType) {
-                            "ETF", "MUTUALFUND" -> AssetType.ETF
+                        val type = when {
+                            quote.quoteType in listOf("ETF", "MUTUALFUND") -> AssetType.ETF
+                            quote.quoteType == "CRYPTOCURRENCY" -> AssetType.CRYPTO
                             else -> AssetType.STOCK
                         }
-                        // L'ID = symbole normalisé (lowercase, sans points)
-                        val id = quote.symbol.lowercase().replace(".", "_")
-                        // Le symbole = ticker Yahoo tel quel (ex: HO.PA, AAPL, CW8.PA)
-                        Asset(id, name, quote.symbol, type)
+                        Asset(quote.symbol.lowercase().replace(".", "_"), name, quote.symbol, type)
                     } ?: emptyList()
-            } catch (e: Exception) {
-                e.printStackTrace()
-                emptyList()
-            }
+            } catch (e: Exception) { emptyList() }
 
-            // Métaux physiques (recherche locale)
             val metals = listOf(
                 Asset("gold_bar", "Lingot d'Or (1kg)", "XAUEUR=X", AssetType.GOLD_BAR),
                 Asset("gold_ingot", "Lingotin d'Or (100g)", "XAUEUR=X", AssetType.GOLD_INGOT),
                 Asset("gold_coin_napoleon", "Pièce Napoléon 20Fr", "XAUEUR=X", AssetType.GOLD_COIN),
                 Asset("silver_bar", "Lingot d'Argent", "XAGEUR=X", AssetType.METAL)
-            ).filter {
-                it.name.contains(query, ignoreCase = true) ||
-                it.symbol.contains(query, ignoreCase = true)
-            }
+            ).filter { it.name.contains(query, ignoreCase = true) }
 
-            metals + yahooResults + cryptosDeferred
-        } catch (e: Exception) {
-            emptyList()
-        }
+            metals + yahooResults + cryptos
+        } catch (e: Exception) { emptyList() }
     }
 
-    suspend fun ensureAssetExists(asset: Asset) {
-        portfolioDao.insertAsset(
-            AssetEntity(asset.id, asset.name, asset.symbol, asset.type)
-        )
+    suspend fun ensureAssetExists(asset: Asset) = syncMutex.withLock {
+        portfolioDao.insertAsset(AssetEntity(asset.id, asset.name, asset.symbol, asset.type))
     }
-
-    // ───────────────────────────────────────────────
-    // Export / Import JSON
-    // ───────────────────────────────────────────────
 
     suspend fun exportToJson(): String = syncMutex.withLock {
         val assets = portfolioDao.getAllAssetsOnce()
         val transactions = portfolioDao.getAllTransactionsOnce()
-
         val exportData = mapOf(
-            "version" to 1,
-            "exportedAt" to System.currentTimeMillis(),
-            "assets" to assets.map { mapOf(
-                "id" to it.id,
-                "name" to it.name,
-                "symbol" to it.symbol,
-                "type" to it.type.name
-            )},
+            "version" to 1, "exportedAt" to System.currentTimeMillis(),
+            "assets" to assets.map { mapOf("id" to it.id, "name" to it.name, "symbol" to it.symbol, "type" to it.type.name) },
             "transactions" to transactions.map { mapOf(
-                "id" to it.id,
-                "assetId" to it.assetId,
-                "type" to it.type.name,
-                "quantity" to it.quantity,
-                "priceAtDate" to it.priceAtDate,
-                "date" to it.date,
-                "fees" to it.fees
+                "id" to it.id, "assetId" to it.assetId, "type" to it.type.name,
+                "quantity" to it.quantity, "priceAtDate" to it.priceAtDate, "date" to it.date, "fees" to it.fees
             )}
         )
-
         return com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(exportData)
     }
 
     suspend fun importFromJson(json: String, clearExisting: Boolean = false): ImportResult = syncMutex.withLock {
         return try {
-            val gson = com.google.gson.Gson()
-            @Suppress("UNCHECKED_CAST")
-            val data = gson.fromJson(json, Map::class.java) as Map<String, Any>
-
-            @Suppress("UNCHECKED_CAST")
+            val data = com.google.gson.Gson().fromJson(json, Map::class.java) as Map<String, Any>
             val assetsList = data["assets"] as? List<Map<String, Any>> ?: emptyList()
-            @Suppress("UNCHECKED_CAST")
             val transactionsList = data["transactions"] as? List<Map<String, Any>> ?: emptyList()
 
             database.withTransaction {
@@ -540,70 +435,35 @@ class PortfolioRepository @Inject constructor(
                     portfolioDao.deleteAllTransactions()
                     portfolioDao.deleteAllAssets()
                 }
-
                 var importedAssets = 0
                 var importedTransactions = 0
-
-                // 1. Charger les transactions existantes pour déduplication (si on ne clear pas tout)
                 val existingTxs = if (!clearExisting) portfolioDao.getAllTransactionsOnce() else emptyList()
-                val processedKeys = mutableSetOf<String>()
 
                 for (a in assetsList) {
-                    try {
-                        portfolioDao.insertAsset(AssetEntity(
-                            id = a["id"] as String,
-                            name = a["name"] as String,
-                            symbol = a["symbol"] as String,
-                            type = AssetType.valueOf(a["type"] as String)
-                        ))
-                        importedAssets++
-                    } catch (e: Exception) { e.printStackTrace() }
+                    portfolioDao.insertAsset(AssetEntity(
+                        id = a["id"] as String, name = a["name"] as String,
+                        symbol = a["symbol"] as String, type = AssetType.valueOf(a["type"] as String)
+                    ))
+                    importedAssets++
                 }
 
                 for (t in transactionsList) {
-                    try {
-                        val assetId = t["assetId"] as String
-                        val typeStr = t["type"] as String
-                        val type = TransactionType.valueOf(typeStr)
-                        
-                        // Extraction plus directe et robuste des nombres (Gson/Room)
-                        val quantity = (t["quantity"] as? Number)?.toDouble() ?: 0.0
-                        val priceAtDate = (t["priceAtDate"] as? Number)?.toDouble() ?: 0.0
-                        val date = (t["date"] as? Number)?.toLong() ?: 0L
-                        val fees = (t["fees"] as? Number)?.toDouble() ?: 0.0
-                        val jsonId = (t["id"] as? Number)?.toLong() ?: 0L
-
-                        // Déduplication logique uniquement si on ne vide pas tout (import manuel)
-                        if (!clearExisting) {
-                            val isDuplicate = existingTxs.any {
-                                it.assetId == assetId && it.date == date && 
-                                it.type == type && Math.abs(it.quantity - quantity) < 0.000001 &&
-                                Math.abs(it.priceAtDate - priceAtDate) < 0.000001
-                            }
-                            if (isDuplicate) continue
-                        }
-
-                        // En mode sync (clearExisting), on tente de garder l'ID original du JSON
-                        val txId = if (clearExisting && jsonId > 0) jsonId else 0L
-
-                        portfolioDao.insertTransaction(TransactionEntity(
-                            id = txId,
-                            assetId = assetId,
-                            type = type,
-                            quantity = quantity,
-                            priceAtDate = priceAtDate,
-                            date = date,
-                            fees = fees
-                        ))
-                        importedTransactions++
-                    } catch (e: Exception) { e.printStackTrace() }
+                    val assetId = t["assetId"] as String
+                    val type = TransactionType.valueOf(t["type"] as String)
+                    val quantity = (t["quantity"] as? Number)?.toDouble() ?: 0.0
+                    val priceAtDate = (t["priceAtDate"] as? Number)?.toDouble() ?: 0.0
+                    val date = (t["date"] as? Number)?.toLong() ?: 0L
+                    val fees = (t["fees"] as? Number)?.toDouble() ?: 0.0
+                    if (!clearExisting) {
+                        val isDuplicate = existingTxs.any { it.assetId == assetId && it.date == date && it.type == type && Math.abs(it.quantity - quantity) < 0.000001 }
+                        if (isDuplicate) continue
+                    }
+                    portfolioDao.insertTransaction(TransactionEntity(assetId = assetId, type = type, quantity = quantity, priceAtDate = priceAtDate, date = date, fees = fees))
+                    importedTransactions++
                 }
-
                 ImportResult.Success(importedAssets, importedTransactions)
             }
-        } catch (e: Exception) {
-            ImportResult.Error(e.message ?: "Erreur inconnue")
-        }
+        } catch (e: Exception) { ImportResult.Error(e.message ?: "Erreur inconnue") }
     }
 
     sealed class ImportResult {
@@ -611,4 +471,3 @@ class PortfolioRepository @Inject constructor(
         data class Error(val message: String) : ImportResult()
     }
 }
-

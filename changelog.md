@@ -1,5 +1,17 @@
 # Journal des modifications (Changelog) - Valoria
 
+## [0.0.36] - 2026-03-09
+### Corrigé
+- **Stabilisation des Graphiques** : Système de fallback automatique vers Yahoo Finance si CoinGecko est saturé (erreur 429).
+- **Fiabilité 24h/7j** : Affichage garanti même hors sessions de trading avec extension de la plage de données.
+- **Support Crypto Étendu** : Meilleure identification des cryptos via Yahoo (tickers BTC-EUR, etc.).
+
+## [0.0.35] - 2026-03-09
+### Corrigé
+- **Correctif Yahoo Finance** : Migration vers l'endpoint `v8/chart` (le précédent `v7/quote` étant devenu instable/bloqué).
+- **Cache de données** : Optimisation des appels API via un cache de graphiques en mémoire de 15 minutes.
+- **Métaux précieux** : Support de l'or et de l'argent via tickers de secours (Gold/Silver Futures) en cas de panne des devises directes.
+
 ## [0.0.33] - 2026-03-09
 ### Ajouté
 - **Système d'alertes de prix** : Notifications automatiques si un actif varie de plus de 3% sur 24h.

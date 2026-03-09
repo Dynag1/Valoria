@@ -2,6 +2,7 @@ package com.example.portmonnai.data.remote
 
 import retrofit2.http.GET
 import retrofit2.http.Query
+import retrofit2.http.Path
 
 interface CoinGeckoApi {
     @GET("simple/price")
@@ -13,7 +14,7 @@ interface CoinGeckoApi {
 
     @GET("coins/{id}/market_chart")
     suspend fun getMarketChart(
-        @retrofit2.http.Path("id") id: String,
+        @Path("id") id: String,
         @Query("vs_currency") currency: String = "eur",
         @Query("days") days: String = "max" // ou "1", "7", "365", "max"
     ): CoinGeckoMarketChartResponse
@@ -25,7 +26,7 @@ interface CoinGeckoApi {
 }
 
 data class CoinGeckoMarketChartResponse(
-    val prices: List<List<Double>>? // listOf([timestamp, price], ...)
+    val prices: List<List<Any>>? // listOf([timestamp, price], ...)
 )
 
 data class SearchResponse(
@@ -56,6 +57,11 @@ interface YahooFinanceApi {
         @Query("interval") interval: String = "1d"
     ): YahooChartResponse
 
+    @GET("v7/finance/quote")
+    suspend fun getQuotes(
+        @Query("symbols") symbols: String
+    ): YahooQuoteResponse
+
     @GET("v1/finance/search")
     suspend fun searchTicker(
         @Query("q") query: String,
@@ -64,6 +70,23 @@ interface YahooFinanceApi {
         @Query("lang") lang: String = "fr-FR"
     ): YahooSearchResponse
 }
+
+data class YahooQuoteResponse(
+    val quoteResponse: QuoteResultWrapper
+)
+
+data class QuoteResultWrapper(
+    val result: List<YahooQuote>?,
+    val error: Any?
+)
+
+data class YahooQuote(
+    val symbol: String,
+    val regularMarketPrice: Double,
+    val regularMarketChangePercent: Double? = 0.0,
+    val regularMarketPreviousClose: Double? = 0.0,
+    val currency: String? = "EUR"
+)
 
 data class YahooChartResponse(
     val chart: ChartResultWrapper

@@ -7,8 +7,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.portmonnai.data.repository.PortfolioRepository
 import com.example.portmonnai.domain.model.Asset
+import com.example.portmonnai.domain.model.AssetType
 import com.example.portmonnai.domain.model.PortfolioAsset
 import com.example.portmonnai.domain.model.Transaction
+import com.example.portmonnai.domain.model.TransactionType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.*
@@ -134,45 +136,46 @@ class PortfolioViewModel @Inject constructor(
     }
 
     fun loadTransactionsForAsset(assetId: String) {
-        _uiState.update { it.copy(selectedAssetChartData = null, selectedChartFilter = ChartFilter.ALL) }
+        _uiState.update { it.copy(selectedAssetId = assetId, selectedAssetChartData = null, selectedChartFilter = ChartFilter.ALL) }
         repository.getTransactionsForAsset(assetId)
             .onEach { txList ->
                 _uiState.update { it.copy(selectedAssetTransactions = txList) }
-                loadChartData(assetId, _uiState.value.selectedChartFilter, txList)
+                val asset = _uiState.value.portfolioAssets.find { it.asset.id == assetId }?.asset
+                if (asset != null) {
+                    loadChartData(asset.id, asset.symbol, asset.type, _uiState.value.selectedChartFilter)
+                }
             }
             .launchIn(viewModelScope)
     }
 
     fun changeChartFilter(filter: ChartFilter) {
         if (_uiState.value.selectedChartFilter == filter) return
-        
-        val assetId = _uiState.value.selectedAssetTransactions.firstOrNull()?.assetId ?: return
         _uiState.update { it.copy(selectedChartFilter = filter, selectedAssetChartData = null) }
-        loadChartData(assetId, filter, _uiState.value.selectedAssetTransactions)
+        val assetId = _uiState.value.selectedAssetId ?: return
+        val asset = _uiState.value.portfolioAssets.find { it.asset.id == assetId }?.asset
+        if (asset != null) {
+            loadChartData(asset.id, asset.symbol, asset.type, filter)
+        }
     }
 
-    private fun loadChartData(assetId: String, filter: ChartFilter, txList: List<Transaction>) {
+    private fun loadChartData(assetId: String, symbol: String, type: AssetType, filter: ChartFilter) {
         viewModelScope.launch {
-            val asset = _uiState.value.portfolioAssets.find { it.asset.id == assetId }?.asset
-            
-            if (asset != null) {
-                val now = System.currentTimeMillis()
-                val MS_IN_DAY = 86400000L
-                val startDateMs = when (filter) {
-                    ChartFilter.H24 -> now - MS_IN_DAY
-                    ChartFilter.D7 -> now - (7 * MS_IN_DAY)
-                    ChartFilter.M1 -> now - (30 * MS_IN_DAY)
-                    ChartFilter.Y1 -> now - (365 * MS_IN_DAY)
-                    ChartFilter.Y5 -> now - (5 * 365 * MS_IN_DAY)
-                    ChartFilter.ALL -> {
-                        // Remonter à début 2015 (environ 11 ans)
-                        now - (11 * 365 * MS_IN_DAY)
-                    }
+            val MS_IN_DAY = 86400000L
+            val now = System.currentTimeMillis()
+            val startDateMs = when (filter) {
+                ChartFilter.H24 -> now - MS_IN_DAY
+                ChartFilter.D7 -> now - (7 * MS_IN_DAY)
+                ChartFilter.M1 -> now - (30 * MS_IN_DAY)
+                ChartFilter.Y1 -> now - (365 * MS_IN_DAY)
+                ChartFilter.Y5 -> now - (5 * 365 * MS_IN_DAY)
+                ChartFilter.ALL -> {
+                    // ALL = depuis 2015 (environ 11 ans)
+                    now - (11 * 365 * MS_IN_DAY)
                 }
-                
-                val chart = repository.getAssetHistoricalPrices(asset.id, asset.symbol, asset.type, startDateMs)
-                _uiState.update { it.copy(selectedAssetChartData = chart) }
             }
+            
+            val data = repository.getAssetHistoricalPrices(assetId, symbol, type, startDateMs)
+            _uiState.update { it.copy(selectedAssetChartData = data) }
         }
     }
 
@@ -305,6 +308,7 @@ data class PortfolioUiState(
     val selectedAssetTransactions: List<Transaction> = emptyList(),
     val selectedAssetChartData: List<Pair<Long, Double>>? = null,
     val selectedChartFilter: ChartFilter = ChartFilter.ALL,
+    val selectedAssetId: String? = null,
     val importMessage: String? = null,
     val notificationsEnabled: Boolean = true,
     val error: String? = null
