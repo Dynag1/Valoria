@@ -123,10 +123,14 @@ class PortfolioRepository @Inject constructor(
             }
         }
     }
+    
+    suspend fun getPortfolioAssetsOnce(): List<PortfolioAsset> {
+        return getPortfolioAssets().first()
+    }
 
     data class PriceData(val price: Double, val change24h: Double = 0.0)
-
-    private suspend fun fetchCurrentPrices(): Map<String, PriceData> {
+ 
+    suspend fun fetchCurrentPrices(): Map<String, PriceData> {
         val result = mutableMapOf<String, PriceData>()
 
         // 1. Fetch EUR/USD rate

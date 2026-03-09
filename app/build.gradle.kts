@@ -14,8 +14,8 @@ android {
         applicationId = "com.example.portmonnai"
         minSdk = 26
         targetSdk = 35
-        versionCode = 21
-        versionName = "0.0.32"
+        versionCode = 22
+        versionName = "0.0.33"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -97,6 +97,8 @@ dependencies {
     implementation("com.google.dagger:hilt-android:2.50")
     ksp("com.google.dagger:hilt-android-compiler:2.50")
     implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
+    implementation("androidx.hilt:hilt-work:1.1.0")
+    ksp("androidx.hilt:hilt-compiler:1.1.0")
 
     // Room
     val roomVersion = "2.6.1"
@@ -112,6 +114,9 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
+    // WorkManager (Background Refresh)
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+    
     // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")

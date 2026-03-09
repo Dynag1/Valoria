@@ -27,6 +27,9 @@ enum class ChartFilter(val label: String) {
     ALL("Tout")
 }
 
+private const val PREFS_NAME = "price_alerts_prefs"
+private const val ALERTS_ENABLED_KEY = "alerts_enabled"
+
 @HiltViewModel
 class PortfolioViewModel @Inject constructor(
     private val repository: PortfolioRepository,
@@ -43,6 +46,18 @@ class PortfolioViewModel @Inject constructor(
 
     init {
         loadPortfolio()
+        loadSettings()
+    }
+
+    private fun loadSettings() {
+        val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        _uiState.update { it.copy(notificationsEnabled = prefs.getBoolean(ALERTS_ENABLED_KEY, true)) }
+    }
+
+    fun toggleNotifications(enabled: Boolean) {
+        val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(ALERTS_ENABLED_KEY, enabled).apply()
+        _uiState.update { it.copy(notificationsEnabled = enabled) }
     }
 
     /** Appelé depuis MainActivity avec l'URI persisté en SharedPreferences */
@@ -291,5 +306,6 @@ data class PortfolioUiState(
     val selectedAssetChartData: List<Pair<Long, Double>>? = null,
     val selectedChartFilter: ChartFilter = ChartFilter.ALL,
     val importMessage: String? = null,
+    val notificationsEnabled: Boolean = true,
     val error: String? = null
 )

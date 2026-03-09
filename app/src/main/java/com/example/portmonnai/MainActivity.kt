@@ -29,6 +29,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.work.*
+import java.util.concurrent.TimeUnit
+import com.example.portmonnai.worker.PriceAlertWorker
+import android.os.Build
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+import androidx.activity.compose.ManagedActivityResultLauncher
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -65,10 +73,37 @@ class MainActivity : ComponentActivity() {
                         mutableStateOf(prefs.getString("data_folder_uri", null))
                     }
 
-                    // Initialisation du sync au 1er démarrage
+                    // Permission notifications (Android 13+)
+                    val permissionLauncher = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        rememberLauncherForActivityResult(
+                            ActivityResultContracts.RequestPermission()
+                        ) { isGranted ->
+                            if (isGranted) {
+                                viewModel.toggleNotifications(true)
+                            }
+                        }
+                    } else null
+
+                    // Initialisation du sync et du WorkManager
                     LaunchedEffect(Unit) {
                         viewModel.setSyncFolderUri(dataFolderUri)
                         viewModel.autoLoadFromFolder()
+
+                        // Schedule price alert worker every 2 hours with Network constraint
+                        val constraints = Constraints.Builder()
+                            .setRequiredNetworkType(NetworkType.CONNECTED)
+                            .build()
+
+                        val priceWorkRequest = PeriodicWorkRequestBuilder<PriceAlertWorker>(2, TimeUnit.HOURS)
+                            .setConstraints(constraints)
+                            .setInitialDelay(15, TimeUnit.MINUTES) // Attendre un peu après le lancement
+                            .build()
+
+                        WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork(
+                            "PriceAlertWork",
+                            ExistingPeriodicWorkPolicy.KEEP,
+                            priceWorkRequest
+                        )
                     }
 
                     // Interception d'un fichier .val ouvert depuis l'explorateur de fichiers Android
@@ -244,10 +279,27 @@ class MainActivity : ComponentActivity() {
                                             .ifBlank { uri }
                                     } catch (e: Exception) { uri }
                                 },
+                                notificationsEnabled = uiState.notificationsEnabled,
                                 onBack = { navController.popBackStack() },
                                 onExport = { exportLauncher.launch(exportFileName()) },
                                 onImport = { importLauncher.launch(arrayOf("*/*")) },
-                                onChooseFolder = { folderPickerLauncher.launch(null) }
+                                onChooseFolder = { folderPickerLauncher.launch(null) },
+                                onToggleNotifications = { enabled ->
+                                    if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        val hasPermission = ContextCompat.checkSelfPermission(
+                                            this@MainActivity,
+                                            Manifest.permission.POST_NOTIFICATIONS
+                                        ) == PackageManager.PERMISSION_GRANTED
+                                        
+                                        if (!hasPermission) {
+                                            permissionLauncher?.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                        } else {
+                                            viewModel.toggleNotifications(true)
+                                        }
+                                    } else {
+                                        viewModel.toggleNotifications(enabled)
+                                    }
+                                }
                             )
                         }
                     }
