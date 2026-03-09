@@ -217,7 +217,7 @@ fun DashboardScreen(
                 items(categories) { category ->
                     val categoryAssets = groupedAssets[category] ?: emptyList()
                     if (categoryAssets.isNotEmpty()) {
-                        val isExpanded = expandedStates[category] != false
+                        val isExpanded = expandedStates[category] == true
                         val totalCatValue = categoryAssets.sumOf { it.totalValue }
                         val totalCatProfit = categoryAssets.sumOf { it.totalProfit }
                         val totalCatInvested = categoryAssets.sumOf { it.totalQuantity * it.averageBuyPrice }
@@ -232,16 +232,23 @@ fun DashboardScreen(
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Surface(
                                 onClick = { expandedStates[category] = !isExpanded },
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
                                 shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
                             ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
+                                Box(modifier = Modifier.background(
+                                    Brush.horizontalGradient(
+                                        listOf( Gold.copy(alpha = 0.15f), Color.Transparent )
+                                    )
+                                )) {
+                                    Column(modifier = Modifier.padding(16.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
                                             text = category,
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold,
+                                            color = Gold,
                                             modifier = Modifier.weight(1f)
                                         )
                                         Text(
@@ -290,6 +297,7 @@ fun DashboardScreen(
                                                     color = profitTodayColor, fontSize = 12.sp
                                                 )
                                             }
+                                        }
                                         }
                                     }
                                 }
@@ -457,9 +465,15 @@ fun AssetCard(portfolioAsset: PortfolioAsset, onClick: () -> Unit = {}) {
     Card(
         modifier = Modifier.fillMaxWidth().clickable { onClick() },
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Gold.copy(alpha = 0.2f))
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Box(modifier = Modifier.background(
+            Brush.linearGradient(
+                listOf(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+            )
+        )) {
+            Column(modifier = Modifier.padding(16.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column {
                     Text(portfolioAsset.asset.name, fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -498,6 +512,7 @@ fun AssetCard(portfolioAsset: PortfolioAsset, onClick: () -> Unit = {}) {
                         Text("(${String.format("%.1f", portfolioAsset.profitTodayPercentage)}%)", color = if (portfolioAsset.profitToday >= 0) GreenHedge else RedHedge, fontSize = 14.sp)
                     }
                 }
+            }
             }
         }
     }
