@@ -466,7 +466,10 @@ fun AssetCard(portfolioAsset: PortfolioAsset, onClick: () -> Unit = {}) {
         modifier = Modifier.fillMaxWidth().clickable { onClick() },
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Gold.copy(alpha = 0.2f))
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp, 
+            if (portfolioAsset.profitToday >= 0) GreenHedge.copy(alpha = 0.5f) else RedHedge.copy(alpha = 0.5f)
+        )
     ) {
         Box(modifier = Modifier.background(
             Brush.linearGradient(

@@ -14,8 +14,8 @@ android {
         applicationId = "com.example.portmonnai"
         minSdk = 26
         targetSdk = 35
-        versionCode = 19
-        versionName = "0.0.30"
+        versionCode = 20
+        versionName = "0.0.31"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
