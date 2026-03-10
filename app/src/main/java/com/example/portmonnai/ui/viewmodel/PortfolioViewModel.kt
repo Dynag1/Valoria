@@ -74,9 +74,9 @@ class PortfolioViewModel @Inject constructor(
             .onStart { _uiState.update { it.copy(isLoading = true) } }
             .onEach { assets ->
                 val totalValue = assets.sumOf { it.totalValue }
-                val totalInvested = assets.sumOf { it.totalQuantity * it.averageBuyPrice }
                 val totalProfit = assets.sumOf { it.totalProfit }
-                val totalProfitPct = if (totalInvested > 0) (totalProfit / totalInvested) * 100.0 else 0.0
+                val totalAllTimeCost = assets.sumOf { it.totalAllTimeCost }
+                val totalProfitPct = if (totalAllTimeCost > 0) (totalProfit / totalAllTimeCost) * 100.0 else 0.0
                 _uiState.update {
                     it.copy(
                         isLoading = false,
@@ -168,10 +168,7 @@ class PortfolioViewModel @Inject constructor(
                 ChartFilter.M1 -> now - (30 * MS_IN_DAY)
                 ChartFilter.Y1 -> now - (365 * MS_IN_DAY)
                 ChartFilter.Y5 -> now - (5 * 365 * MS_IN_DAY)
-                ChartFilter.ALL -> {
-                    // ALL = depuis 2015 (environ 11 ans)
-                    now - (11 * 365 * MS_IN_DAY)
-                }
+                ChartFilter.ALL -> 0L
             }
             
             val data = repository.getAssetHistoricalPrices(assetId, symbol, type, startDateMs)

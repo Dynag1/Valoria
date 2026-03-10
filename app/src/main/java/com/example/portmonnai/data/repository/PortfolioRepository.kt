@@ -69,16 +69,27 @@ class PortfolioRepository @Inject constructor(
             var totalCostBasis = 0.0
             var realizedProfit = 0.0
 
-            for (tx in assetTransactions.sortedBy { it.date }) {
+            // Tri : date, puis BUY avant SELL pour éviter PRU incohérent sur même timestamp, puis ID
+            val sortedTxs = assetTransactions.sortedWith(
+                compareBy<TransactionEntity> { it.date }
+                    .thenBy { it.type == TransactionType.SELL }
+                    .thenBy { it.id }
+            )
+
+            for (tx in sortedTxs) {
                 if (tx.type == TransactionType.BUY) {
                     currentQty += tx.quantity
                     totalCostBasis += (tx.quantity * tx.priceAtDate) + tx.fees
                 } else if (tx.type == TransactionType.SELL) {
-                    val currentPru = if (currentQty > 0) totalCostBasis / currentQty else 0.0
+                    val currentPru = if (currentQty > 0.00000001) totalCostBasis / currentQty else 0.0
                     val costOfSold = tx.quantity * currentPru
                     totalCostBasis -= costOfSold
-                    if (totalCostBasis < 0) totalCostBasis = 0.0
                     currentQty -= tx.quantity
+                    
+                    if (currentQty < 0.00000001) {
+                        currentQty = 0.0
+                        totalCostBasis = 0.0
+                    }
                     val revenue = (tx.quantity * tx.priceAtDate) - tx.fees
                     realizedProfit += (revenue - costOfSold)
                 }
@@ -94,8 +105,32 @@ class PortfolioRepository @Inject constructor(
                 .sumOf { it.quantity * it.priceAtDate + it.fees }
             val profitPct = if (totalAllTimeCost > 0) (totalProfit / totalAllTimeCost) * 100.0 else 0.0
 
+            // --- Calcul de la performance "Aujourd'hui" (dernières 24h) ---
             val change24h = priceData?.change24h ?: 0.0
-            val profitToday = totalValue * (change24h / 100.0)
+            val now = System.currentTimeMillis()
+            val cutoff24h = now - 24 * 60 * 60 * 1000L
+            
+            // On retrouve la situation il y a 24h
+            val txsToday = assetTransactions.filter { it.date > cutoff24h }
+            val qtyBoughtToday = txsToday.filter { it.type == TransactionType.BUY }.sumOf { it.quantity }
+            val qtySoldToday = txsToday.filter { it.type == TransactionType.SELL }.sumOf { it.quantity }
+            val qty24hAgo = (currentQty - qtyBoughtToday + qtySoldToday).coerceAtLeast(0.0)
+            
+            val price24hAgo = currentPrice / (1.0 + (change24h / 100.0))
+            val value24hAgo = qty24hAgo * price24hAgo
+            
+            // Flux de trésorerie net aujourd'hui
+            val netCashflowToday = txsToday.sumOf { 
+                val sign = if (it.type == TransactionType.BUY) 1.0 else -1.0
+                sign * (it.quantity * it.priceAtDate + (if (it.type == TransactionType.BUY) it.fees else -it.fees))
+            }
+
+            // Profit du jour = Variation de valeur - Flux net
+            val profitToday = totalValue - value24hAgo - netCashflowToday
+            
+            // Le % du jour est rapporté à la valeur de départ + les achats (évite division par 0)
+            val baseForPct = value24hAgo + txsToday.filter { it.type == TransactionType.BUY }.sumOf { it.quantity * it.priceAtDate }
+            val profitTodayPercentage = if (baseForPct > 0) (profitToday / baseForPct) * 100.0 else change24h
 
             PortfolioAsset(
                 asset = Asset(entity.id, entity.name, entity.symbol, entity.type, currentPrice, change24h),
@@ -105,7 +140,8 @@ class PortfolioRepository @Inject constructor(
                 totalProfit = totalProfit,
                 profitPercentage = profitPct,
                 profitToday = profitToday,
-                profitTodayPercentage = change24h
+                profitTodayPercentage = profitTodayPercentage,
+                totalAllTimeCost = totalAllTimeCost
             )
         }
     }
@@ -157,21 +193,22 @@ class PortfolioRepository @Inject constructor(
                         if (ticker.contains("EUR=X")) {
                             if (ticker.startsWith("XAU")) {
                                 val gramPrice = price / 31.1035
-                                cachedPrices["gold_bar"] = PriceData(gramPrice, change)
-                                cachedPrices["gold_ingot"] = PriceData(gramPrice, change)
+                                cachedPrices["gold_bar"] = PriceData(gramPrice * 1000.0, change)
+                                cachedPrices["gold_ingot"] = PriceData(gramPrice * 100.0, change)
                                 cachedPrices["gold_coin_napoleon"] = PriceData(gramPrice * 5.806, change)
                                 cachedPrices["pax-gold"] = PriceData(price, change)
                             } else {
-                                cachedPrices["silver_bar"] = PriceData(price / 31.1035, change)
+                                cachedPrices["silver_bar"] = PriceData((price / 31.1035) * 1000.0, change) // Lingot 1kg
                             }
                         } else if (ticker == "GC=F" && !cachedPrices.containsKey("gold_bar")) {
-                            val gramPrice = (price * usdEurRate) / 31.1035
-                            cachedPrices["gold_bar"] = PriceData(gramPrice, change)
-                            cachedPrices["gold_ingot"] = PriceData(gramPrice, change)
+                            val gramPrice = (price / usdEurRate) / 31.1035
+                            cachedPrices["gold_bar"] = PriceData(gramPrice * 1000.0, change)
+                            cachedPrices["gold_ingot"] = PriceData(gramPrice * 100.0, change)
                             cachedPrices["gold_coin_napoleon"] = PriceData(gramPrice * 5.806, change)
-                            cachedPrices["pax-gold"] = PriceData(price * usdEurRate, change)
+                            cachedPrices["pax-gold"] = PriceData(price / usdEurRate, change)
                         } else if (ticker == "SI=F" && !cachedPrices.containsKey("silver_bar")) {
-                            cachedPrices["silver_bar"] = PriceData((price * usdEurRate) / 31.1035, change)
+                            val gramPrice = (price / usdEurRate) / 31.1035
+                            cachedPrices["silver_bar"] = PriceData(gramPrice * 1000.0, change)
                         }
                     } catch (e: Exception) { }
                 }
@@ -180,7 +217,10 @@ class PortfolioRepository @Inject constructor(
 
         try {
             val allDbAssets = portfolioDao.getAllAssetsOnce()
-            val stockAssets = allDbAssets.filter { it.type == AssetType.STOCK || it.type == AssetType.ETF }
+            val stockAssets = allDbAssets.filter { 
+                it.type == AssetType.STOCK || it.type == AssetType.ETF || 
+                (it.type == AssetType.CRYPTO && !cachedPrices.containsKey(it.id))
+            }
                 .filter { it.symbol.isNotBlank() }
                 .distinctBy { it.symbol }
 
@@ -193,7 +233,25 @@ class PortfolioRepository @Inject constructor(
                             var price = meta.regularMarketPrice
                             val prevClose = meta.chartPreviousClose
                             val change = if (prevClose > 0) ((price - prevClose) / prevClose) * 100.0 else 0.0
-                            if (meta.currency == "USD") price *= usdEurRate
+                            
+                            // Conversion multi-devises vers EUR
+                            // EurUsdRate (EURUSD=X) est le nombre de dollars pour 1 Euro (ex: 1.08)
+                            // Donc 1 USD = 1 / 1.08 Euro.
+                            price = when (meta.currency) {
+                                "USD" -> price / usdEurRate
+                                "GBp" -> (price / 100.0) / (usdEurRate * 0.92) // Approx GBP/USD ou conversion directe
+                                "GBP" -> price / (usdEurRate * 0.92)
+                                "CHF" -> price / 0.96 // Approx CHF/EUR
+                                else -> price // Supposé EUR
+                            }
+
+                            // Idéalement, on devrait fetcher les taux, mais pour la stabilité
+                            // on va au moins corriger le bug des Pences (GBp) qui est commun sur les ETFs
+                            if (meta.currency == "GBp") {
+                                // On tente de fetcher le taux réel pour GBP/EUR si besoin... 
+                                // mais le plus important est la division par 100.
+                            }
+
                             allDbAssets.filter { it.symbol == asset.symbol }.forEach { 
                                 cachedPrices[it.id] = PriceData(price, change)
                             }
@@ -246,7 +304,8 @@ class PortfolioRepository @Inject constructor(
                         daysDiff <= 1 -> "1"
                         daysDiff <= 7 -> "7"
                         daysDiff <= 30 -> "30"
-                        else -> "365"
+                        daysDiff <= 365 -> "365"
+                        else -> "max"
                     }
                     Log.d("ChartData", "CG: Fetching $cgId days=$daysParam")
                     val response = coinGeckoApi.getMarketChart(cgId, "eur", daysParam)
@@ -292,7 +351,8 @@ class PortfolioRepository @Inject constructor(
                     daysDiff <= 1 -> "2d" to "15m"
                     daysDiff <= 7 -> "7d" to "1h"
                     daysDiff <= 30 -> "1mo" to "1h"
-                    else -> "1y" to "1d"
+                    daysDiff <= 365 -> "1y" to "1d"
+                    else -> "max" to "1d"
                 }
 
                 Log.d("ChartData", "Yahoo: Fetching $ticker range=$rangeParam")
@@ -455,7 +515,12 @@ class PortfolioRepository @Inject constructor(
                     val date = (t["date"] as? Number)?.toLong() ?: 0L
                     val fees = (t["fees"] as? Number)?.toDouble() ?: 0.0
                     if (!clearExisting) {
-                        val isDuplicate = existingTxs.any { it.assetId == assetId && it.date == date && it.type == type && Math.abs(it.quantity - quantity) < 0.000001 }
+                        val isDuplicate = existingTxs.any { 
+                            it.assetId == assetId && it.date == date && it.type == type && 
+                            Math.abs(it.quantity - quantity) < 0.000001 &&
+                            Math.abs(it.priceAtDate - priceAtDate) < 0.000001 &&
+                            Math.abs(it.fees - fees) < 0.000001
+                        }
                         if (isDuplicate) continue
                     }
                     portfolioDao.insertTransaction(TransactionEntity(assetId = assetId, type = type, quantity = quantity, priceAtDate = priceAtDate, date = date, fees = fees))

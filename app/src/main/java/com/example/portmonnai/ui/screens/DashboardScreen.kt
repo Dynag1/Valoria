@@ -220,8 +220,8 @@ fun DashboardScreen(
                         val isExpanded = expandedStates[category] == true
                         val totalCatValue = categoryAssets.sumOf { it.totalValue }
                         val totalCatProfit = categoryAssets.sumOf { it.totalProfit }
-                        val totalCatInvested = categoryAssets.sumOf { it.totalQuantity * it.averageBuyPrice }
-                        val totalCatProfitPct = if (totalCatInvested > 0) (totalCatProfit / totalCatInvested) * 100.0 else 0.0
+                        val totalCatAllTimeCost = categoryAssets.sumOf { it.totalAllTimeCost }
+                        val totalCatProfitPct = if (totalCatAllTimeCost > 0) (totalCatProfit / totalCatAllTimeCost) * 100.0 else 0.0
                         val totalCatProfitToday = categoryAssets.sumOf { it.profitToday }
                         val totalCatProfitTodayPct = if (totalCatValue - totalCatProfitToday > 0) 
                             (totalCatProfitToday / (totalCatValue - totalCatProfitToday)) * 100.0 else 0.0

@@ -35,5 +35,6 @@ data class PortfolioAsset(
     val totalProfit: Double,
     val profitPercentage: Double,
     val profitToday: Double = 0.0,
-    val profitTodayPercentage: Double = 0.0
+    val profitTodayPercentage: Double = 0.0,
+    val totalAllTimeCost: Double = 0.0
 )

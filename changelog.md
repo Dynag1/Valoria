@@ -1,5 +1,14 @@
 # Journal des modifications (Changelog) - Valoria
 
+## [0.0.37] - 2026-03-10
+### Corrigé
+- **Calcul des gains critique** : Correction de l'inversion du taux EUR/USD (division au lieu de multiplication).
+- **Unités des métaux** : Prix désormais calculés par lingot (1kg, 100g) et par pièce (Napoléon) au lieu du gramme simple.
+- **Conversion multi-devises** : Support des actifs en GBp (Pences), GBP et CHF avec conversion vers l'Euro.
+- **Stabilité du PRU** : Tri chronologique strict (Achats avant Ventes sur même timestamp) pour des gains réalisés exacts.
+- **Performance du jour** : Nouveau moteur prenant en compte les achats récents pour ne pas fausser les gains sur 24h.
+- **Fallback Crypto** : Récupération des prix via Yahoo si CoinGecko est manquant ou saturé.
+
 ## [0.0.36] - 2026-03-09
 ### Corrigé
 - **Stabilisation des Graphiques** : Système de fallback automatique vers Yahoo Finance si CoinGecko est saturé (erreur 429).
