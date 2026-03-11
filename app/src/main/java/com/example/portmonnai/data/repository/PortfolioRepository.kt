@@ -273,19 +273,31 @@ class PortfolioRepository @Inject constructor(
         }
     }
 
-    suspend fun getAssetHistoricalPrices(assetId: String, symbol: String, type: AssetType, startDateMs: Long): List<Pair<Long, Double>> = chartMutex.withLock {
+    suspend fun getAssetHistoricalPrices(assetId: String, symbol: String, type: AssetType, startDateMs: Long): List<Pair<Long, Double>> {
         val bucketedStart = (startDateMs / 900000L) * 900000L
         val cacheKey = "${assetId}_${bucketedStart}"
         
+        // Lecture du cache sans mutex pour ne pas bloquer les chargements parallèles
         val cached = chartCache[cacheKey]
         if (cached != null && (System.currentTimeMillis() - cached.first) < 15 * 60 * 1000L) {
-            return@withLock cached.second
+            return cached.second
         }
 
         val result = mutableListOf<Pair<Long, Double>>()
         val now = System.currentTimeMillis()
         val daysDiff = ((now - startDateMs) / 86400000L).coerceAtLeast(1)
         val isMetal = type in listOf(AssetType.GOLD_BAR, AssetType.GOLD_INGOT, AssetType.GOLD_COIN, AssetType.METAL)
+        val isGold = isMetal && !assetId.contains("silver")
+        val isSilver = isMetal && assetId.contains("silver")
+
+        // Multiplicateur commun (troy oz → unité de l'actif)
+        val metalMultiplier = when (assetId) {
+            "gold_bar"          -> 1000.0 / 31.1035   // 1000g
+            "gold_ingot"        -> 100.0  / 31.1035   // 100g
+            "gold_coin_napoleon"-> 5.806  / 31.1035   // 5.806g
+            "silver_bar"        -> 1000.0 / 31.1035   // 1000g
+            else                -> 1.0
+        }
 
         var primarySourceFailed = false
 
@@ -296,30 +308,24 @@ class PortfolioRepository @Inject constructor(
             while (retryCount < 2 && !success) {
                 try {
                     val cgId = when {
-                        isMetal && (assetId.contains("silver") || symbol.contains("XAG")) -> "kinesis-silver"
-                        isMetal -> "pax-gold"
-                        else -> assetId.trim().lowercase()
+                        isSilver -> "kinesis-silver"
+                        isMetal  -> "pax-gold"
+                        else     -> assetId.trim().lowercase()
                     }
                     val daysParam = when {
-                        daysDiff <= 1 -> "1"
-                        daysDiff <= 7 -> "7"
-                        daysDiff <= 30 -> "30"
+                        daysDiff <= 1   -> "1"
+                        daysDiff <= 7   -> "7"
+                        daysDiff <= 30  -> "30"
                         daysDiff <= 365 -> "365"
-                        else -> "max"
+                        else            -> "max"
                     }
                     Log.d("ChartData", "CG: Fetching $cgId days=$daysParam")
                     val response = coinGeckoApi.getMarketChart(cgId, "eur", daysParam)
-                    val multiplier = when (assetId) {
-                        "gold_bar", "gold_ingot" -> 1.0 / 31.1035
-                        "gold_coin_napoleon" -> (1.0 / 31.1035) * 5.806
-                        "silver_bar" -> 1.0 / 31.1035
-                        else -> 1.0
-                    }
                     response.prices?.forEach { point ->
                         if (point.size >= 2) {
                             val timestamp = (point[0] as? Number)?.toLong() ?: 0L
                             val price = (point[1] as? Number)?.toDouble() ?: 0.0
-                            result.add(Pair(timestamp, price * multiplier))
+                            result.add(Pair(timestamp, price * metalMultiplier))
                         }
                     }
                     if (result.size >= 2) success = true
@@ -327,7 +333,7 @@ class PortfolioRepository @Inject constructor(
                     if (e.toString().contains("429")) {
                         retryCount++
                         Log.w("ChartData", "CG: 429, retry $retryCount")
-                        delay(2000)
+                        delay(1000) // 1s au lieu de 2s pour ne pas bloquer l'UI
                     } else { primarySourceFailed = true; break }
                 }
             }
@@ -336,27 +342,39 @@ class PortfolioRepository @Inject constructor(
 
         // FALLBACK YAHOO OU SOURCE PRIMAIRE YAHOO
         if (type == AssetType.STOCK || type == AssetType.ETF || primarySourceFailed) {
-            try {
-                // Si c'est un fallback pour crypto/métal, on ajuste le ticker
-                val ticker = if (primarySourceFailed && (type == AssetType.CRYPTO || isMetal)) {
-                    when {
-                        isMetal && symbol.contains("XAU") -> "XAUEUR=X"
-                        isMetal && symbol.contains("XAG") -> "XAGEUR=X"
-                        symbol.contains("-") -> symbol.uppercase()
-                        else -> "${symbol.uppercase()}-EUR"
-                    }
-                } else symbol
-
-                val (rangeParam, interval) = when {
-                    daysDiff <= 1 -> "2d" to "15m"
-                    daysDiff <= 7 -> "7d" to "1h"
-                    daysDiff <= 30 -> "1mo" to "1h"
-                    daysDiff <= 365 -> "1y" to "1d"
-                    else -> "max" to "1d"
+            // Pour les métaux, GC=F (Gold Futures) et SI=F (Silver Futures) supportent
+            // bien mieux les longues plages historiques que XAUEUR=X / XAGEUR=X
+            val yahooTicker = when {
+                primarySourceFailed && isGold   -> "GC=F"
+                primarySourceFailed && isSilver -> "SI=F"
+                primarySourceFailed && type == AssetType.CRYPTO -> {
+                    if (symbol.contains("-")) symbol.uppercase()
+                    else "${symbol.uppercase()}-EUR"
                 }
+                else -> symbol
+            }
 
-                Log.d("ChartData", "Yahoo: Fetching $ticker range=$rangeParam")
-                val response = yahooFinanceApi.getHistoricalChartData(ticker, range = rangeParam, interval = interval)
+            // Pour les Futures USD, on a besoin du taux EUR/USD pour convertir
+            var usdEurRate = 0.0
+            if ((yahooTicker == "GC=F" || yahooTicker == "SI=F") && primarySourceFailed) {
+                try {
+                    val resp = yahooFinanceApi.getChartData("EURUSD=X")
+                    usdEurRate = resp.chart.result?.firstOrNull()?.meta?.regularMarketPrice ?: 0.0
+                } catch (_: Exception) {}
+                if (usdEurRate <= 0) usdEurRate = 0.94 // fallback statique
+            }
+
+            val (rangeParam, interval) = when {
+                daysDiff <= 1   -> "2d"  to "15m"
+                daysDiff <= 7   -> "7d"  to "1h"
+                daysDiff <= 30  -> "1mo" to "1h"
+                daysDiff <= 365 -> "1y"  to "1d"
+                else            -> "max" to "1wk"  // 1wk pour les longues plages (moins de points null)
+            }
+
+            try {
+                Log.d("ChartData", "Yahoo: Fetching $yahooTicker range=$rangeParam interval=$interval")
+                val response = yahooFinanceApi.getHistoricalChartData(yahooTicker, range = rangeParam, interval = interval)
                 val chartResult = response.chart.result?.firstOrNull()
                 val timestamps = chartResult?.timestamp
                 val closes = chartResult?.indicators?.quote?.firstOrNull()?.close
@@ -365,27 +383,26 @@ class PortfolioRepository @Inject constructor(
                     val batch = mutableListOf<Pair<Long, Double>>()
                     for (i in timestamps.indices) {
                         val tsMs = timestamps[i] * 1000L
-                        val closePrice = closes.getOrNull(i)
-                        if (closePrice != null) batch.add(Pair(tsMs, closePrice))
-                    }
-                    // On prend tout sans filtrer par startDate pour contrer les problèmes de fuseau/clocks
-                    if (batch.size >= 2) {
-                        if (result.isEmpty()) result.addAll(batch)
-                        else {
-                            // Si on a déjà des points CG, on ne mélange pas forcément, 
-                            // mais ici primarySourceFailed est true donc result est vide ou pauvre.
-                            result.clear()
-                            result.addAll(batch)
+                        var closePrice = closes.getOrNull(i) ?: continue
+                        // Appliquer le multiplicateur pour les métaux (GC=F / SI=F sont en USD/oz)
+                        if (primarySourceFailed && isMetal && usdEurRate > 0) {
+                            closePrice = (closePrice / usdEurRate) * metalMultiplier
+                        } else if (primarySourceFailed && isMetal) {
+                            closePrice = closePrice * metalMultiplier
                         }
+                        if (closePrice > 0) batch.add(Pair(tsMs, closePrice))
+                    }
+                    if (batch.size >= 2) {
+                        result.clear()
+                        result.addAll(batch)
                     }
                 }
             } catch (e: Exception) {
-                Log.e("ChartData", "Yahoo failure for $symbol: ${e.message}")
+                Log.e("ChartData", "Yahoo failure for $yahooTicker: ${e.message}")
             }
         }
 
-        // FILTRAGE FINAL : Si on a des données mais elles sont toutes AVANT startDateMs, on garde les 100 dernières
-        // pour que l'utilisateur voit QUELQUE CHOSE.
+        // FILTRAGE FINAL
         val sorted = result.sortedBy { it.first }.distinctBy { it.first }
         val finalResult = if (sorted.size >= 2) {
             val filtered = sorted.filter { it.first >= startDateMs - 3600000L }
@@ -396,8 +413,9 @@ class PortfolioRepository @Inject constructor(
         if (finalResult.size >= 2) {
             chartCache[cacheKey] = Pair(System.currentTimeMillis(), finalResult)
         }
-        return@withLock finalResult
+        return finalResult
     }
+
 
     suspend fun addTransaction(transaction: Transaction) = syncMutex.withLock {
         portfolioDao.insertTransaction(

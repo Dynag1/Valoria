@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.portmonnai.domain.model.AssetType
@@ -478,14 +479,29 @@ fun AssetCard(portfolioAsset: PortfolioAsset, onClick: () -> Unit = {}) {
         )) {
             Column(modifier = Modifier.padding(16.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Column {
-                    Text(portfolioAsset.asset.name, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                     Text(
-                        "${formatValue(portfolioAsset.totalQuantity, 4)} ${portfolioAsset.asset.symbol} • €${formatValue(portfolioAsset.asset.currentPrice ?: 0.0)}",
+                        portfolioAsset.asset.name,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        "${formatValue(portfolioAsset.totalQuantity, 4)} ${portfolioAsset.asset.symbol}",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("€${formatValue(portfolioAsset.totalValue)}", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text(
+                        "€${formatValue(portfolioAsset.asset.currentPrice ?: 0.0)}",
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), fontSize = 12.sp
                     )
                 }
-                Text("€${formatValue(portfolioAsset.totalValue)}", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
 
             Spacer(modifier = Modifier.height(8.dp))

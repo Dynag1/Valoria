@@ -135,15 +135,14 @@ class PortfolioViewModel @Inject constructor(
         }
     }
 
-    fun loadTransactionsForAsset(assetId: String) {
+    fun loadTransactionsForAsset(portfolioAsset: PortfolioAsset) {
+        val assetId = portfolioAsset.asset.id
         _uiState.update { it.copy(selectedAssetId = assetId, selectedAssetChartData = null, selectedChartFilter = ChartFilter.ALL) }
+        // Lancer le chargement du graphique immédiatement avec l'asset déjà connu
+        loadChartData(portfolioAsset.asset.id, portfolioAsset.asset.symbol, portfolioAsset.asset.type, ChartFilter.ALL)
         repository.getTransactionsForAsset(assetId)
             .onEach { txList ->
                 _uiState.update { it.copy(selectedAssetTransactions = txList) }
-                val asset = _uiState.value.portfolioAssets.find { it.asset.id == assetId }?.asset
-                if (asset != null) {
-                    loadChartData(asset.id, asset.symbol, asset.type, _uiState.value.selectedChartFilter)
-                }
             }
             .launchIn(viewModelScope)
     }

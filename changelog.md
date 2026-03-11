@@ -1,5 +1,14 @@
 # Journal des modifications (Changelog) - Valoria
 
+## [0.0.38] - 2026-03-11
+### Ajouté
+- **Prix unitaire sur les cartes** : Le prix pour 1 unité est affiché à droite, sous le montant total, sur toutes les cartes d'actifs (ETF, actions, métaux, crypto).
+
+### Corrigé
+- **Graphique toujours affiché** : Correction d'une race condition qui empêchait le graphique de s'afficher 1 fois sur 2 en naviguant vers un actif.
+- **Graphique des métaux (Napoléon, lingots)** : Correction du fallback Yahoo Finance — utilisation de `GC=F` au lieu de `XAUEUR=X` (qui ne supportait pas les longues plages historiques), et application correcte du multiplicateur de poids.
+- **Noms longs** : Les noms d'actifs trop longs sont maintenant tronqués avec `…` sur les cartes, sans déborder sur le montant.
+
 ## [0.0.37] - 2026-03-10
 ### Corrigé
 - **Calcul des gains critique** : Correction de l'inversion du taux EUR/USD (division au lieu de multiplication).

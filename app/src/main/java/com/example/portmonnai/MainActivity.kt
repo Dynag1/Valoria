@@ -207,7 +207,7 @@ class MainActivity : ComponentActivity() {
                                 onAddTransaction = { navController.navigate("add_transaction") },
                                 onAssetClick = { asset ->
                                     selectedAsset = asset
-                                    viewModel.loadTransactionsForAsset(asset.asset.id)
+                                    viewModel.loadTransactionsForAsset(asset)
                                     navController.navigate("asset_detail")
                                 },
                                 onDeleteAsset = { asset -> viewModel.deleteAsset(asset.asset.id) },
