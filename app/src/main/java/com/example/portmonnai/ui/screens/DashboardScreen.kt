@@ -28,9 +28,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.portmonnai.domain.model.AssetType
 import com.example.portmonnai.domain.model.PortfolioAsset
-import com.example.portmonnai.ui.theme.Gold
-import com.example.portmonnai.ui.theme.GreenHedge
-import com.example.portmonnai.ui.theme.RedHedge
+import com.example.portmonnai.ui.theme.SoberBlue
+import com.example.portmonnai.ui.theme.SoberSuccess
+import com.example.portmonnai.ui.theme.SoberError
 import androidx.compose.material.icons.filled.Sort
 
 enum class AssetSortOrder {
@@ -103,7 +103,7 @@ fun DashboardScreen(
             confirmButton = {
                 TextButton(
                     onClick = { onDeleteAsset(asset); assetToDelete = null },
-                    colors = ButtonDefaults.textButtonColors(contentColor = RedHedge)
+                    colors = ButtonDefaults.textButtonColors(contentColor = SoberError)
                 ) { Text("Supprimer") }
             },
             dismissButton = {
@@ -139,8 +139,8 @@ fun DashboardScreen(
 
                     SmallFloatingActionButton(
                         onClick = onAddTransaction,
-                        containerColor = Gold,
-                        contentColor = Color.Black,
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Icon(Icons.Default.Add, contentDescription = "Ajouter")
@@ -188,7 +188,7 @@ fun DashboardScreen(
                         
                         Box {
                             IconButton(onClick = { showSortMenu = true }) {
-                                Icon(Icons.Default.Sort, contentDescription = "Trier", tint = Gold)
+                                Icon(Icons.Default.Sort, contentDescription = "Trier", tint = MaterialTheme.colorScheme.primary)
                             }
                             DropdownMenu(
                                 expanded = showSortMenu,
@@ -227,8 +227,8 @@ fun DashboardScreen(
                         val totalCatProfitTodayPct = if (totalCatValue - totalCatProfitToday > 0) 
                             (totalCatProfitToday / (totalCatValue - totalCatProfitToday)) * 100.0 else 0.0
 
-                        val profitColor = if (totalCatProfit >= 0) GreenHedge else RedHedge
-                        val profitTodayColor = if (totalCatProfitToday >= 0) GreenHedge else RedHedge
+                        val profitColor = if (totalCatProfit >= 0) SoberSuccess else SoberError
+                        val profitTodayColor = if (totalCatProfitToday >= 0) SoberSuccess else SoberError
 
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Surface(
@@ -238,24 +238,33 @@ fun DashboardScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
                             ) {
-                                Box(modifier = Modifier.background(
-                                    Brush.horizontalGradient(
-                                        listOf( Gold.copy(alpha = 0.15f), Color.Transparent )
+                                Box(modifier = Modifier.fillMaxWidth()) {
+                                    // Vertical accent bar
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.CenterStart)
+                                            .width(4.dp)
+                                            .height(24.dp)
+                                            .background(
+                                                MaterialTheme.colorScheme.primary,
+                                                RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)
+                                            )
                                     )
-                                )) {
-                                    Column(modifier = Modifier.padding(16.dp)) {
+                                    
+                                    Column(modifier = Modifier.padding(16.dp).padding(start = 8.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
                                             text = category,
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Gold,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Black,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            letterSpacing = 1.sp,
                                             modifier = Modifier.weight(1f)
                                         )
                                         Text(
                                             text = "€${formatValue(totalCatValue)}",
                                             style = MaterialTheme.typography.titleMedium,
-                                            color = Gold,
+                                            color = MaterialTheme.colorScheme.onSurface,
                                             fontWeight = FontWeight.Bold
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
@@ -360,7 +369,7 @@ fun SwipeToDeleteAssetCard(
         backgroundContent = {
             val color by animateColorAsState(
                 targetValue = if (dismissState.dismissDirection == SwipeToDismissBoxValue.EndToStart)
-                    RedHedge else Color.Transparent,
+                    SoberError else Color.Transparent,
                 label = "swipe_bg"
             )
             Box(
@@ -394,8 +403,8 @@ fun PortfolioHeader(
     totalProfitToday: Double,
     totalProfitTodayPercentage: Double
 ) {
-    val profitColor = if (totalProfit >= 0) GreenHedge else RedHedge
-    val profitTodayColor = if (totalProfitToday >= 0) GreenHedge else RedHedge
+    val profitColor = if (totalProfit >= 0) SoberSuccess else SoberError
+    val profitTodayColor = if (totalProfitToday >= 0) SoberSuccess else SoberError
     val trendIcon = if (totalProfit >= 0) Icons.AutoMirrored.Filled.TrendingUp else Icons.AutoMirrored.Filled.TrendingDown
 
     Card(
@@ -405,7 +414,6 @@ fun PortfolioHeader(
     ) {
         Box(
             modifier = Modifier
-                .background(Brush.verticalGradient(listOf(Gold.copy(alpha = 0.1f), Color.Transparent)))
                 .padding(24.dp)
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
@@ -414,7 +422,7 @@ fun PortfolioHeader(
                     text = "€${formatValue(totalValue)}",
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Black,
-                    color = Gold
+                    color = MaterialTheme.colorScheme.onSurface
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -466,18 +474,13 @@ fun AssetCard(portfolioAsset: PortfolioAsset, onClick: () -> Unit = {}) {
     Card(
         modifier = Modifier.fillMaxWidth().clickable { onClick() },
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = androidx.compose.foundation.BorderStroke(
-            1.dp, 
-            if (portfolioAsset.profitToday >= 0) GreenHedge.copy(alpha = 0.5f) else RedHedge.copy(alpha = 0.5f)
+            1.5.dp, 
+            if (portfolioAsset.profitToday >= 0) SoberSuccess.copy(alpha = 0.6f) else SoberError.copy(alpha = 0.6f)
         )
     ) {
-        Box(modifier = Modifier.background(
-            Brush.linearGradient(
-                listOf(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-            )
-        )) {
-            Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                     Text(
@@ -514,10 +517,10 @@ fun AssetCard(portfolioAsset: PortfolioAsset, onClick: () -> Unit = {}) {
                     Row {
                         Text(
                             "${if (portfolioAsset.totalProfit >= 0) "+" else ""}€${formatValue(portfolioAsset.totalProfit)}",
-                            color = if (portfolioAsset.totalProfit >= 0) GreenHedge else RedHedge, fontSize = 14.sp, fontWeight = FontWeight.Bold
+                            color = if (portfolioAsset.totalProfit >= 0) SoberSuccess else SoberError, fontSize = 14.sp, fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("(${String.format("%.1f", portfolioAsset.profitPercentage)}%)", color = if (portfolioAsset.totalProfit >= 0) GreenHedge else RedHedge, fontSize = 14.sp)
+                        Text("(${String.format("%.1f", portfolioAsset.profitPercentage)}%)", color = if (portfolioAsset.totalProfit >= 0) SoberSuccess else SoberError, fontSize = 14.sp)
                     }
                 }
                 Column(horizontalAlignment = Alignment.End) {
@@ -525,14 +528,13 @@ fun AssetCard(portfolioAsset: PortfolioAsset, onClick: () -> Unit = {}) {
                     Row {
                         Text(
                             "${if (portfolioAsset.profitToday >= 0) "+" else ""}€${formatValue(portfolioAsset.profitToday)}",
-                            color = if (portfolioAsset.profitToday >= 0) GreenHedge else RedHedge, fontSize = 14.sp, fontWeight = FontWeight.Bold
+                            color = if (portfolioAsset.profitToday >= 0) SoberSuccess else SoberError, fontSize = 14.sp, fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("(${String.format("%.1f", portfolioAsset.profitTodayPercentage)}%)", color = if (portfolioAsset.profitToday >= 0) GreenHedge else RedHedge, fontSize = 14.sp)
-                    }
+                        Text("(${String.format("%.1f", portfolioAsset.profitTodayPercentage)}%)", color = if (portfolioAsset.profitToday >= 0) SoberSuccess else SoberError, fontSize = 14.sp)
                 }
-            }
             }
         }
     }
+}
 }

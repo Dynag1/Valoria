@@ -14,7 +14,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.portmonnai.domain.model.Transaction
 import com.example.portmonnai.domain.model.TransactionType
-import com.example.portmonnai.ui.theme.Gold
+import com.example.portmonnai.ui.theme.SoberBlue
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -131,7 +131,7 @@ fun EditTransactionScreen(
                     onSave(updated)
                 },
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Gold),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                 enabled = quantity.isNotBlank() && price.isNotBlank()
             ) {
                 Text("Enregistrer les modifications")

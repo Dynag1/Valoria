@@ -13,7 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.portmonnai.domain.model.*
-import com.example.portmonnai.ui.theme.Gold
+import com.example.portmonnai.ui.theme.SoberBlue
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -105,7 +105,7 @@ fun AddTransactionScreen(
                             ) {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Text(asset.name)
-                                    Text(asset.symbol, color = Gold)
+                                    Text(asset.symbol, color = MaterialTheme.colorScheme.primary)
                                 }
                             }
                         }

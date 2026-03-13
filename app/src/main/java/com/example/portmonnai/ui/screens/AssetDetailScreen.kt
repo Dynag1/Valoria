@@ -29,9 +29,9 @@ import androidx.compose.ui.unit.sp
 import com.example.portmonnai.domain.model.PortfolioAsset
 import com.example.portmonnai.domain.model.Transaction
 import com.example.portmonnai.domain.model.TransactionType
-import com.example.portmonnai.ui.theme.Gold
-import com.example.portmonnai.ui.theme.GreenHedge
-import com.example.portmonnai.ui.theme.RedHedge
+import com.example.portmonnai.ui.theme.SoberBlue
+import com.example.portmonnai.ui.theme.SoberSuccess
+import com.example.portmonnai.ui.theme.SoberError
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -71,7 +71,7 @@ fun AssetDetailScreen(
                         onDeleteTransaction(tx)
                         transactionToDelete = null
                     },
-                    colors = ButtonDefaults.textButtonColors(contentColor = RedHedge)
+                    colors = ButtonDefaults.textButtonColors(contentColor = SoberError)
                 ) {
                     Text("Supprimer")
                 }
@@ -99,7 +99,7 @@ fun AssetDetailScreen(
                         showDeleteAssetDialog = false
                         onBack()
                     },
-                    colors = ButtonDefaults.textButtonColors(contentColor = RedHedge)
+                    colors = ButtonDefaults.textButtonColors(contentColor = SoberError)
                 ) {
                     Text("Supprimer")
                 }
@@ -132,7 +132,7 @@ fun AssetDetailScreen(
                 },
                 actions = {
                     IconButton(onClick = { showDeleteAssetDialog = true }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Supprimer l'actif", tint = RedHedge)
+                        Icon(Icons.Default.Delete, contentDescription = "Supprimer l'actif", tint = SoberError)
                     }
                 }
             )
@@ -172,7 +172,7 @@ fun AssetDetailScreen(
                 } else {
                     // Chargement du graphique
                     Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Gold)
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                     }
                 }
             }
@@ -213,12 +213,13 @@ fun AssetDetailScreen(
 
 @Composable
 fun AssetSummaryCard(portfolioAsset: PortfolioAsset) {
-    val profitColor = if (portfolioAsset.totalProfit >= 0) GreenHedge else RedHedge
+    val profitColor = if (portfolioAsset.totalProfit >= 0) SoberSuccess else SoberError
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = androidx.compose.foundation.BorderStroke(1.5.dp, profitColor.copy(alpha = 0.6f))
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
@@ -227,7 +228,7 @@ fun AssetSummaryCard(portfolioAsset: PortfolioAsset) {
             ) {
                 Column {
                     Text("Valeur actuelle", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                    Text("€${formatValue(portfolioAsset.totalValue)}", fontWeight = FontWeight.Bold, fontSize = 22.sp, color = Gold)
+                    Text("€${formatValue(portfolioAsset.totalValue)}", fontWeight = FontWeight.Bold, fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurface)
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text("Quantité", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
@@ -277,7 +278,7 @@ fun TransactionItem(
     onDelete: () -> Unit
 ) {
     val isBuy = transaction.type == TransactionType.BUY
-    val typeColor = if (isBuy) GreenHedge else RedHedge
+    val typeColor = if (isBuy) SoberSuccess else SoberError
     val typeLabel = if (isBuy) "Achat" else "Vente"
     val dateStr = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(transaction.date))
     val total = transaction.quantity * transaction.priceAtDate
@@ -329,7 +330,7 @@ fun TransactionItem(
             Column(horizontalAlignment = Alignment.End) {
                 Text(
                     text = "${if (isBuy) "-" else "+"}€${formatValue(total)}",
-                    color = if (isBuy) RedHedge else GreenHedge,
+                    color = if (isBuy) SoberError else SoberSuccess,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp
                 )
@@ -339,7 +340,7 @@ fun TransactionItem(
                         Icon(
                             Icons.Default.Edit,
                             contentDescription = "Modifier",
-                            tint = Gold,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -347,7 +348,7 @@ fun TransactionItem(
                         Icon(
                             Icons.Default.Delete,
                             contentDescription = "Supprimer",
-                            tint = RedHedge,
+                            tint = SoberError,
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -404,7 +405,7 @@ fun PerformanceChartCard(
                         val currentHoverPrice = hoverPoint.second
                         val isGain = currentHoverPrice >= originalPrice
                         val pct = if (originalPrice > 0) ((currentHoverPrice - originalPrice) / originalPrice) * 100 else 0.0
-                        val valColor = if (isGain) GreenHedge else RedHedge
+                        val valColor = if (isGain) SoberSuccess else SoberError
                         val sign = if (isGain) "+" else ""
 
                         val priceStr = "€${formatValue(currentHoverPrice)}"
@@ -437,7 +438,7 @@ fun PerformanceChartCard(
                 val timeRange = (maxTime - minTime).takeIf { it > 0 } ?: 1L
 
                 val isPositive = data.last().second >= data.first().second
-                val lineColor = if (isPositive) GreenHedge else RedHedge
+                val lineColor = if (isPositive) SoberSuccess else SoberError
 
                 Canvas(
                     modifier = Modifier
@@ -509,7 +510,7 @@ fun PerformanceChartCard(
                                 val txX = ((closestPoint.first - minTime).toFloat() / timeRange.toFloat()) * width
                                 val txY = height - (((closestPoint.second - minPrice).toFloat() / range.toFloat()) * height)
                                 
-                                val dotColor = if (tx.type == TransactionType.BUY) GreenHedge else RedHedge
+                                val dotColor = if (tx.type == TransactionType.BUY) SoberSuccess else SoberError
                                 
                                 // Shadow/Outter circle for visibility
                                 drawCircle(
@@ -575,7 +576,7 @@ fun PerformanceChartCard(
                     Surface(
                         onClick = { onFilterSelected(filter) },
                         shape = RoundedCornerShape(8.dp),
-                        color = if (isSelected) Gold.copy(alpha = 0.15f) else Color.Transparent,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent,
                         modifier = Modifier.height(32.dp).weight(1f)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
@@ -583,7 +584,7 @@ fun PerformanceChartCard(
                                 text = filter.label,
                                 fontSize = 12.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) Gold else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                             )
                         }
                     }

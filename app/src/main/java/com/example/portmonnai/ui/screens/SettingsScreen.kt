@@ -15,7 +15,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.portmonnai.ui.theme.Gold
+import com.example.portmonnai.ui.theme.SoberBlue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.filled.NotificationsActive
 
@@ -56,7 +56,7 @@ fun SettingsScreen(
             // Choix du dossier
             SettingsCard(
                 icon = Icons.Default.FolderOpen,
-                iconTint = Gold,
+                iconTint = MaterialTheme.colorScheme.primary,
                 title = "Dossier de sauvegarde",
                 subtitle = dataFolderPath ?: "Non défini — appuyez pour choisir",
                 onClick = onChooseFolder
@@ -87,7 +87,7 @@ fun SettingsScreen(
 
             SettingsToggleCard(
                 icon = androidx.compose.material.icons.Icons.Default.NotificationsActive,
-                iconTint = Gold,
+                iconTint = MaterialTheme.colorScheme.primary,
                 title = "Alertes de prix",
                 subtitle = "Notifier si un actif varie de plus de 3% en 24h",
                 checked = notificationsEnabled,
@@ -201,7 +201,7 @@ fun SettingsToggleCard(
                 onCheckedChange = onCheckedChange,
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
-                    checkedTrackColor = Gold
+                    checkedTrackColor = MaterialTheme.colorScheme.primary
                 )
             )
         }
