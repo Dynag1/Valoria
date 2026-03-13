@@ -49,7 +49,8 @@ class PriceAlertWorker @AssistedInject constructor(
 
             portfolioAssets.forEach { asset ->
                 val id = asset.asset.id
-                val change24h = asset.profitTodayPercentage
+                // Use the individual asset price change from 24h as provided by the API
+                val change24h = asset.asset.priceChange24h ?: 0.0
                 val absChange = Math.abs(change24h)
                 
                 if (absChange >= ALERT_THRESHOLD) {
@@ -62,7 +63,7 @@ class PriceAlertWorker @AssistedInject constructor(
                             change24h,
                             asset.asset.currentPrice ?: 0.0
                         )
-                        // Mark as notified today
+                        // Mark as notified
                         prefs.edit().putLong(NOTIFIED_PREFIX + id, now).apply()
                     }
                 }

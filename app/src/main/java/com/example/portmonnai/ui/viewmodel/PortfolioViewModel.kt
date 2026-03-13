@@ -13,6 +13,8 @@ import com.example.portmonnai.domain.model.Transaction
 import com.example.portmonnai.domain.model.TransactionType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.example.portmonnai.ui.widget.PortfolioWidget
+import androidx.glance.appwidget.updateAll
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
@@ -89,6 +91,10 @@ class PortfolioViewModel @Inject constructor(
                         totalProfitTodayPercentage = if (totalValue - assets.sumOf { a -> a.profitToday } > 0)
                             (assets.sumOf { a -> a.profitToday } / (totalValue - assets.sumOf { a -> a.profitToday })) * 100.0 else 0.0
                     )
+                }
+                // Mettre à jour le widget
+                viewModelScope.launch {
+                    PortfolioWidget().updateAll(appContext)
                 }
             }
             .catch { e ->

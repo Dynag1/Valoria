@@ -14,8 +14,8 @@ android {
         applicationId = "com.example.portmonnai"
         minSdk = 26
         targetSdk = 35
-        versionCode = 28
-        versionName = "0.1.0"
+        versionCode = 29
+        versionName = "0.1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -116,6 +116,10 @@ dependencies {
 
     // WorkManager (Background Refresh)
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+    
+    // Glance AppWidget
+    implementation("androidx.glance:glance-appwidget:1.1.0")
+    implementation("androidx.glance:glance-material3:1.1.0")
     
     // Testing
     testImplementation("junit:junit:4.13.2")

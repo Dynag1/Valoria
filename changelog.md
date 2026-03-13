@@ -1,5 +1,19 @@
 # Journal des modifications (Changelog) - Valoria
 
+## [0.1.1] - 2026-03-13
+### Ajouté
+- **Widget de bureau (2x1)** : Affichez la valeur totale de votre portefeuille et la performance du jour directement sur votre écran d'accueil.
+- **Rafraîchissement interactif** : Un appui sur le widget force la mise à jour des prix. Mise à jour automatique toutes les 30 minutes.
+
+### Corrigé
+- **Alertes de prix (notifications)** : Correction de la logique de détection des variations de prix (>3%). Les notifications sont désormais plus réactives et prioritaires (bannière, son, vibration).
+- **Formatage du widget** : Ajustement du symbole € après le montant et gestion propre des signes +/- sur les gains.
+
+## [0.1.0] - 2026-03-12
+### Ajouté
+- Structure de base pour le passage en version Beta.
+- Nettoyage des dépendances.
+
 ## [0.0.38] - 2026-03-11
 ### Ajouté
 - **Prix unitaire sur les cartes** : Le prix pour 1 unité est affiché à droite, sous le montant total, sur toutes les cartes d'actifs (ETF, actions, métaux, crypto).
