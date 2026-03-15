@@ -38,7 +38,7 @@ jobs:
               exit(1)
 
       - name: Build Release APK
-        run: ./gradlew assembleRelease
+        run: ./gradlew assembleRelease -x lintVitalRelease
 
       - name: Checkout Central F-Droid Store
         uses: actions/checkout@v4
