@@ -1,0 +1,72 @@
+name: Push APK to Central F-Droid Store
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Decode Keystore
+        shell: python
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE }}
+        run: |
+          import base64
+          import os
+          keystore_b64 = os.environ.get('KEYSTORE_BASE64', '')
+          if keystore_b64:
+              with open('release.keystore', 'wb') as f:
+                  f.write(base64.b64decode(keystore_b64.strip()))
+              print("✅ Keystore decoded successfully")
+          else:
+              print("❌ KEYSTORE_BASE64 secret is empty")
+              exit(1)
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease
+
+      - name: Checkout Central F-Droid Store
+        uses: actions/checkout@v4
+        with:
+          repository: Dynag1/Dynag1-Fdroid
+          token: ${{ secrets.STORE_PAT }}
+          path: store-repo
+
+      - name: Push APK and Metadata to Store
+        run: |
+          # ⚠️ REMPLACEZ par le vrai Package ID de Valoria !
+          PKG_ID="co.dynag.valoria"
+          
+          mkdir -p store-repo/apks/$PKG_ID
+          mkdir -p store-repo/metadata/$PKG_ID/en-US
+          mkdir -p store-repo/metadata/$PKG_ID/fr-FR
+          
+          # Copie des APK (renommé pour éviter les collisions F-Droid)
+          cp app/build/outputs/apk/release/*.apk store-repo/apks/$PKG_ID/valoria-release.apk
+          
+          # Copie des métadonnées Fastlane (facultatif si inexistant)
+          cp -r fastlane/metadata/android/fr-FR/* store-repo/metadata/$PKG_ID/fr-FR/ 2>/dev/null || true
+          cp -r fastlane/metadata/android/en-US/* store-repo/metadata/$PKG_ID/en-US/ 2>/dev/null || true
+          
+          # Push sur le magasin central
+          cd store-repo
+          git config user.name "App Github Action"
+          git config user.email "actions@github.com"
+          git add apks/ metadata/
+          git commit -m "Mise à jour automatique de l'APK Valoria" || echo "Rien à commiter"
+          git push
