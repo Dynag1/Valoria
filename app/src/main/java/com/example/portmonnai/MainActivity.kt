@@ -101,7 +101,7 @@ class MainActivity : ComponentActivity() {
 
                         WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork(
                             "PriceAlertWork",
-                            ExistingPeriodicWorkPolicy.KEEP,
+                            ExistingPeriodicWorkPolicy.UPDATE,
                             priceWorkRequest
                         )
                     }

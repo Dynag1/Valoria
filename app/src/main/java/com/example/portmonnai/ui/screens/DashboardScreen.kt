@@ -34,7 +34,7 @@ import com.example.portmonnai.ui.theme.SoberError
 import androidx.compose.material.icons.filled.Sort
 
 enum class AssetSortOrder {
-    NAME, VALUE, PROFIT, PROFIT_PERCENTAGE
+    NAME, VALUE, PROFIT, PROFIT_PERCENTAGE, PROFIT_TODAY_PERCENTAGE
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -56,7 +56,7 @@ fun DashboardScreen(
     onImportMessageDismissed: () -> Unit
 ) {
     var assetToDelete by remember { mutableStateOf<PortfolioAsset?>(null) }
-    var sortOrder by remember { mutableStateOf(AssetSortOrder.VALUE) }
+    var sortOrder by remember { mutableStateOf(AssetSortOrder.PROFIT_TODAY_PERCENTAGE) }
     var showSortMenu by remember { mutableStateOf(false) }
     val expandedStates = remember { mutableStateMapOf<String, Boolean>() }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -78,6 +78,7 @@ fun DashboardScreen(
                 AssetSortOrder.VALUE -> list.sortedByDescending { it.totalValue }
                 AssetSortOrder.PROFIT -> list.sortedByDescending { it.totalProfit }
                 AssetSortOrder.PROFIT_PERCENTAGE -> list.sortedByDescending { it.profitPercentage }
+                AssetSortOrder.PROFIT_TODAY_PERCENTAGE -> list.sortedByDescending { it.profitTodayPercentage }
             }
         }
     }
@@ -205,6 +206,10 @@ fun DashboardScreen(
                                 DropdownMenuItem(
                                     text = { Text("Trier par Profit %") },
                                     onClick = { sortOrder = AssetSortOrder.PROFIT_PERCENTAGE; showSortMenu = false }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Trier par Profit 24h %") },
+                                    onClick = { sortOrder = AssetSortOrder.PROFIT_TODAY_PERCENTAGE; showSortMenu = false }
                                 )
                                 DropdownMenuItem(
                                     text = { Text("Trier par Nom") },
