@@ -40,7 +40,7 @@ class PriceAlertWorker @AssistedInject constructor(
 
         try {
             // First refresh prices
-            val priceData = repository.fetchCurrentPrices()
+            val priceData = repository.fetchCurrentPrices(force = true)
             // Then get assets to see which one we have
             val portfolioAssets = repository.getPortfolioAssetsOnce()
             

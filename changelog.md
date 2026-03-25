@@ -1,5 +1,12 @@
 # Journal des modifications (Changelog) - Valoria
 
+## [0.1.2] - 2026-03-25
+### Ajouté
+- **Option de Tri 24h** : Par défaut, vos actifs listés dans "Mes actifs" sont désormais triés d'office par la performance globale descendante sur 24h.
+
+### Corrigé
+- **Alertes de prix récalcitrantes** : Le moteur en arrière-plan vérifie désormais de manière plus agressive s'il y a eu une variation supérieure à 3% afin de ne plus louper un mouvement du marché.
+- **Icône de Notifications** : L'icône de la notification qui pouvait faire défaut sur certains téléphones (Android 8 et +) a été stabilisée.
 ## [0.1.1] - 2026-03-13
 ### Ajouté
 - **Widget de bureau (2x1)** : Affichez la valeur totale de votre portefeuille et la performance du jour directement sur votre écran d'accueil.
