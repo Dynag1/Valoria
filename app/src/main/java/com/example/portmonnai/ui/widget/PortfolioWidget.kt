@@ -13,6 +13,7 @@ import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.appwidget.cornerRadius
+import androidx.glance.LocalContext
 import androidx.glance.layout.*
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
@@ -26,6 +27,7 @@ import androidx.glance.appwidget.updateAll
 import com.example.portmonnai.data.repository.PortfolioRepository
 import com.example.portmonnai.ui.theme.SoberError
 import com.example.portmonnai.ui.theme.SoberSuccess
+import com.example.portmonnai.domain.model.AssetType
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -48,84 +50,129 @@ class PortfolioWidget : GlanceAppWidget() {
 
         // Récupérer les données
         val assets = repository.getPortfolioAssetsOnce()
-        val totalValue = assets.sumOf { it.totalValue }
-        val totalProfitToday = assets.sumOf { it.profitToday }
-        val totalProfitTodayPercentage = if (totalValue - totalProfitToday > 0)
-            (totalProfitToday / (totalValue - totalProfitToday)) * 100.0 else 0.0
+        val goldTypes = listOf(AssetType.GOLD_BAR, AssetType.GOLD_INGOT, AssetType.GOLD_COIN, AssetType.METAL)
+        
+        val goldAssets = assets.filter { it.asset.type in goldTypes }
+        val otherAssets = assets.filter { it.asset.type !in goldTypes }
+
+        val otherValue = otherAssets.sumOf { it.totalValue }
+        val otherProfitToday = otherAssets.sumOf { it.profitToday }
+        val otherProfitTodayPct = if (otherValue - otherProfitToday > 0)
+            (otherProfitToday / (otherValue - otherProfitToday)) * 100.0 else 0.0
+
+        val goldValue = goldAssets.sumOf { it.totalValue }
+        val goldProfitToday = goldAssets.sumOf { it.profitToday }
+        val goldProfitTodayPct = if (goldValue - goldProfitToday > 0)
+            (goldProfitToday / (goldValue - goldProfitToday)) * 100.0 else 0.0
 
         provideContent {
             GlanceTheme {
-                PortfolioWidgetContent(totalValue, totalProfitToday, totalProfitTodayPercentage)
+                PortfolioWidgetContent(
+                    otherValue, otherProfitToday, otherProfitTodayPct,
+                    goldValue, goldProfitToday, goldProfitTodayPct
+                )
             }
         }
     }
 
     @Composable
     private fun PortfolioWidgetContent(
-        totalValue: Double,
-        profitToday: Double,
-        profitTodayPct: Double
+        otherValue: Double,
+        otherProfit: Double,
+        otherProfitPct: Double,
+        goldValue: Double,
+        goldProfit: Double,
+        goldProfitPct: Double
     ) {
-        val profitColor = if (profitToday >= 0) SoberSuccess else SoberError
-        val sign = if (profitToday >= 0) "+" else ""
-
         Box(
             modifier = GlanceModifier
                 .fillMaxSize()
                 .padding(4.dp)
                 .clickable(actionRunCallback<RefreshAction>())
         ) {
-            Column(
+            Row(
                 modifier = GlanceModifier
                     .fillMaxSize()
                     .background(GlanceTheme.colors.surface)
                     .cornerRadius(20.dp)
-                    .padding(12.dp),
+                    .padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(
-                    text = "Valeur Totale",
-                    style = TextStyle(
-                        color = GlanceTheme.colors.onSurface,
-                        fontSize = 12.sp
-                    )
+                // Section Actifs
+                StatSection(
+                    title = "Actifs",
+                    value = otherValue,
+                    profit = otherProfit,
+                    profitPct = otherProfitPct,
+                    modifier = GlanceModifier.defaultWeight()
                 )
+
+                // Divider
+                Box(
+                    modifier = GlanceModifier
+                        .width(1.dp)
+                        .fillMaxHeight()
+                        .padding(vertical = 12.dp)
+                        .background(ColorProvider(Color.Gray.copy(alpha = 0.2f)))
+                ) {}
+
+                // Section Or
+                StatSection(
+                    title = "Or Phys.",
+                    value = goldValue,
+                    profit = goldProfit,
+                    profitPct = goldProfitPct,
+                    modifier = GlanceModifier.defaultWeight()
+                )
+            }
+        }
+    }
+
+    @Composable
+    private fun StatSection(
+        title: String,
+        value: Double,
+        profit: Double,
+        profitPct: Double,
+        modifier: GlanceModifier = GlanceModifier
+    ) {
+        val profitColor = if (profit >= 0) SoberSuccess else SoberError
+        val sign = if (profit >= 0) "+" else ""
+
+        Column(
+            modifier = modifier.fillMaxHeight(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = title,
+                style = TextStyle(
+                    color = GlanceTheme.colors.onSurface,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            )
+            Text(
+                text = "${formatValue(value)} €",
+                style = TextStyle(
+                    color = GlanceTheme.colors.onSurface,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            )
+            
+            Spacer(modifier = GlanceModifier.height(2.dp))
+            
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "${formatValue(totalValue)} €",
+                    text = "$sign${String.format("%.1f", profitPct)}%",
                     style = TextStyle(
-                        color = GlanceTheme.colors.onSurface,
-                        fontSize = 20.sp,
+                        color = ColorProvider(profitColor),
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
                 )
-                
-                Spacer(modifier = GlanceModifier.height(4.dp))
-                
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val formattedGain = "${formatValue(Math.abs(profitToday))} €"
-                    val displayGain = if (profitToday >= 0) "+ $formattedGain" else "- $formattedGain"
-                    
-                    Text(
-                        text = displayGain,
-                        style = TextStyle(
-                            color = ColorProvider(profitColor),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    )
-                    Spacer(modifier = GlanceModifier.width(8.dp))
-                    Text(
-                        text = "$sign${String.format("%.2f", profitTodayPct)}%",
-                        style = TextStyle(
-                            color = ColorProvider(profitColor),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    )
-                }
             }
         }
     }

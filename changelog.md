@@ -1,4 +1,6 @@
-# Journal des modifications (Changelog) - Valoria
+## [0.1.3] - 2026-03-30
+### Ajouté
+- **Séparation de l'Or Physique** : Le bandeau du haut (App) et le **Widget** affichent désormais distinctement la valeur des actifs financiers et celle de l'or physique (pièces, lingotins, lingots), avec leurs variations respectives.
 
 ## [0.1.2] - 2026-03-25
 ### Ajouté

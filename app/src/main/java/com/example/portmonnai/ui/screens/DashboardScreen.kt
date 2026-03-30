@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TrendingDown
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
@@ -172,7 +173,7 @@ fun DashboardScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 item {
-                    PortfolioHeader(totalValue, totalProfit, totalProfitPercentage, totalProfitToday, totalProfitTodayPercentage)
+                    PortfolioHeader(assets = assets)
                 }
 
                 item {
@@ -189,7 +190,7 @@ fun DashboardScreen(
                         
                         Box {
                             IconButton(onClick = { showSortMenu = true }) {
-                                Icon(Icons.Default.Sort, contentDescription = "Trier", tint = MaterialTheme.colorScheme.primary)
+                                Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Trier", tint = MaterialTheme.colorScheme.primary)
                             }
                             DropdownMenu(
                                 expanded = showSortMenu,
@@ -401,76 +402,129 @@ fun SwipeToDeleteAssetCard(
 }
 
 @Composable
-fun PortfolioHeader(
-    totalValue: Double,
-    totalProfit: Double,
-    totalProfitPercentage: Double,
-    totalProfitToday: Double,
-    totalProfitTodayPercentage: Double
-) {
-    val profitColor = if (totalProfit >= 0) SoberSuccess else SoberError
-    val profitTodayColor = if (totalProfitToday >= 0) SoberSuccess else SoberError
-    val trendIcon = if (totalProfit >= 0) Icons.AutoMirrored.Filled.TrendingUp else Icons.AutoMirrored.Filled.TrendingDown
+fun PortfolioHeader(assets: List<PortfolioAsset>) {
+    val goldTypes = listOf(AssetType.GOLD_BAR, AssetType.GOLD_INGOT, AssetType.GOLD_COIN, AssetType.METAL)
+    val goldAssets = assets.filter { it.asset.type in goldTypes }
+    val otherAssets = assets.filter { it.asset.type !in goldTypes }
+
+    val goldTotalValue = goldAssets.sumOf { it.totalValue }
+    val goldTotalProfit = goldAssets.sumOf { it.totalProfit }
+    val goldTotalAllTimeCost = goldAssets.sumOf { it.totalAllTimeCost }
+    val goldTotalProfitPercentage = if (goldTotalAllTimeCost > 0) (goldTotalProfit / goldTotalAllTimeCost) * 100.0 else 0.0
+    val goldProfitToday = goldAssets.sumOf { it.profitToday }
+    val goldProfitTodayPercentage = if (goldTotalValue - goldProfitToday > 0) (goldProfitToday / (goldTotalValue - goldProfitToday)) * 100.0 else 0.0
+
+    val otherTotalValue = otherAssets.sumOf { it.totalValue }
+    val otherTotalProfit = otherAssets.sumOf { it.totalProfit }
+    val otherTotalAllTimeCost = otherAssets.sumOf { it.totalAllTimeCost }
+    val otherTotalProfitPercentage = if (otherTotalAllTimeCost > 0) (otherTotalProfit / otherTotalAllTimeCost) * 100.0 else 0.0
+    val otherProfitToday = otherAssets.sumOf { it.profitToday }
+    val otherProfitTodayPercentage = if (otherTotalValue - otherProfitToday > 0) (otherProfitToday / (otherTotalValue - otherProfitToday)) * 100.0 else 0.0
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Box(
+        Row(
             modifier = Modifier
-                .padding(24.dp)
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                Text("Valeur Totale", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), fontSize = 14.sp)
-                Text(
-                    text = "€${formatValue(totalValue)}",
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.Black,
-                    color = MaterialTheme.colorScheme.onSurface
+            // First Column: Actifs
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                StatColumn(
+                    title = "Actifs",
+                    totalValue = otherTotalValue,
+                    totalProfit = otherTotalProfit,
+                    totalProfitPercentage = otherTotalProfitPercentage,
+                    profitToday = otherProfitToday,
+                    profitTodayPercentage = otherProfitTodayPercentage
                 )
+            }
+            
+            // Vertical Divider
+            Box(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height(80.dp)
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+            )
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                    Icon(trendIcon, contentDescription = null, tint = profitColor, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "${if (totalProfit >= 0) "+" else ""}€${formatValue(totalProfit)}",
-                        color = profitColor, fontWeight = FontWeight.Bold, fontSize = 18.sp
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Surface(shape = RoundedCornerShape(8.dp), color = profitColor.copy(alpha = 0.15f)) {
-                        Text(
-                            text = "${if (totalProfitPercentage >= 0) "+" else ""}${String.format("%.2f", totalProfitPercentage)}%",
-                            color = profitColor, fontWeight = FontWeight.Bold, fontSize = 14.sp,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Performance Aujourd'hui", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                            Text("${if (totalProfitToday >= 0) "+" else ""}€${formatValue(totalProfitToday)}", color = profitTodayColor, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Surface(shape = RoundedCornerShape(8.dp), color = profitTodayColor.copy(alpha = 0.15f)) {
-                                Text(
-                                    text = "${if (totalProfitTodayPercentage >= 0) "+" else ""}${String.format("%.2f", totalProfitTodayPercentage)}%",
-                                    color = profitTodayColor, fontWeight = FontWeight.Bold, fontSize = 12.sp,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                    }
-                }
+            // Second Column: Or
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                StatColumn(
+                    title = "Or Physique",
+                    totalValue = goldTotalValue,
+                    totalProfit = goldTotalProfit,
+                    totalProfitPercentage = goldTotalProfitPercentage,
+                    profitToday = goldProfitToday,
+                    profitTodayPercentage = goldProfitTodayPercentage
+                )
             }
         }
+    }
+}
+
+@Composable
+private fun StatColumn(
+    title: String,
+    totalValue: Double,
+    totalProfit: Double,
+    totalProfitPercentage: Double,
+    profitToday: Double,
+    profitTodayPercentage: Double
+) {
+    val profitColor = if (totalProfit >= 0) SoberSuccess else SoberError
+    val profitTodayColor = if (profitToday >= 0) SoberSuccess else SoberError
+    val trendIcon = if (totalProfit >= 0) Icons.AutoMirrored.Filled.TrendingUp else Icons.AutoMirrored.Filled.TrendingDown
+
+    Text(title, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+    Text(
+        text = "€${formatValue(totalValue)}",
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.Black,
+        color = MaterialTheme.colorScheme.onSurface,
+        fontSize = 20.sp
+    )
+
+    Spacer(modifier = Modifier.height(8.dp))
+
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+        Icon(trendIcon, contentDescription = null, tint = profitColor, modifier = Modifier.size(16.dp))
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = "${if (totalProfit >= 0) "+" else ""}€${formatValue(totalProfit)}",
+            color = profitColor, fontWeight = FontWeight.Bold, fontSize = 14.sp
+        )
+    }
+    Surface(shape = RoundedCornerShape(8.dp), color = profitColor.copy(alpha = 0.15f), modifier = Modifier.padding(top = 4.dp)) {
+        Text(
+            text = "${if (totalProfitPercentage >= 0) "+" else ""}${String.format("%.2f", totalProfitPercentage)}%",
+            color = profitColor, fontWeight = FontWeight.Bold, fontSize = 12.sp,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+        )
+    }
+
+    Spacer(modifier = Modifier.height(12.dp))
+
+    Text("Aujourd'hui", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+        Text("${if (profitToday >= 0) "+" else ""}€${formatValue(profitToday)}", color = profitTodayColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+    }
+    Surface(shape = RoundedCornerShape(8.dp), color = profitTodayColor.copy(alpha = 0.15f), modifier = Modifier.padding(top = 4.dp)) {
+        Text(
+            text = "${if (profitTodayPercentage >= 0) "+" else ""}${String.format("%.2f", profitTodayPercentage)}%",
+            color = profitTodayColor, fontWeight = FontWeight.Bold, fontSize = 10.sp,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+        )
     }
 }
 
