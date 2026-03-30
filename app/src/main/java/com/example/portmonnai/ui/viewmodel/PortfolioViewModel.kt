@@ -24,8 +24,11 @@ private const val BACKUP_FILENAME = "Valoria.val"
  
 enum class ChartFilter(val label: String) {
     H24("24h"),
+    D3("3j"),
     D7("7j"),
+    D15("15j"),
     M1("1m"),
+    M6("6m"),
     Y1("1an"),
     Y5("5ans"),
     ALL("Tout")
@@ -163,14 +166,51 @@ class PortfolioViewModel @Inject constructor(
         }
     }
 
+    fun changeTrendsFilter(filter: ChartFilter) {
+        if (_uiState.value.trendsChartFilter == filter) return
+        _uiState.update { it.copy(trendsChartFilter = filter, goldTrendsChartData = null, otherTrendsChartData = null) }
+        loadPortfolioTrends(filter)
+    }
+
+    fun loadPortfolioTrends(filter: ChartFilter) {
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val MS_IN_DAY = 86400000L
+            val startDateMs = when (filter) {
+                ChartFilter.H24 -> now - MS_IN_DAY
+                ChartFilter.D3 -> now - (3 * MS_IN_DAY)
+                ChartFilter.D7 -> now - (7 * MS_IN_DAY)
+                ChartFilter.D15 -> now - (15 * MS_IN_DAY)
+                ChartFilter.M1 -> now - (30 * MS_IN_DAY)
+                ChartFilter.M6 -> now - (180 * MS_IN_DAY)
+                ChartFilter.Y1 -> now - (365 * MS_IN_DAY)
+                ChartFilter.Y5 -> now - (5 * 365 * MS_IN_DAY)
+                ChartFilter.ALL -> 0L
+            }
+            
+            // On charge les deux en parallèle
+            launch {
+                val goldData = repository.getPortfolioTrends(isGold = true, startDateMs = startDateMs)
+                _uiState.update { it.copy(goldTrendsChartData = goldData) }
+            }
+            launch {
+                val otherData = repository.getPortfolioTrends(isGold = false, startDateMs = startDateMs)
+                _uiState.update { it.copy(otherTrendsChartData = otherData) }
+            }
+        }
+    }
+
     private fun loadChartData(assetId: String, symbol: String, type: AssetType, filter: ChartFilter) {
         viewModelScope.launch {
             val MS_IN_DAY = 86400000L
             val now = System.currentTimeMillis()
             val startDateMs = when (filter) {
                 ChartFilter.H24 -> now - MS_IN_DAY
+                ChartFilter.D3 -> now - (3 * MS_IN_DAY)
                 ChartFilter.D7 -> now - (7 * MS_IN_DAY)
+                ChartFilter.D15 -> now - (15 * MS_IN_DAY)
                 ChartFilter.M1 -> now - (30 * MS_IN_DAY)
+                ChartFilter.M6 -> now - (180 * MS_IN_DAY)
                 ChartFilter.Y1 -> now - (365 * MS_IN_DAY)
                 ChartFilter.Y5 -> now - (5 * 365 * MS_IN_DAY)
                 ChartFilter.ALL -> 0L
@@ -311,6 +351,9 @@ data class PortfolioUiState(
     val selectedAssetChartData: List<Pair<Long, Double>>? = null,
     val selectedChartFilter: ChartFilter = ChartFilter.ALL,
     val selectedAssetId: String? = null,
+    val goldTrendsChartData: List<Pair<Long, Double>>? = null,
+    val otherTrendsChartData: List<Pair<Long, Double>>? = null,
+    val trendsChartFilter: ChartFilter = ChartFilter.H24,
     val importMessage: String? = null,
     val notificationsEnabled: Boolean = true,
     val error: String? = null

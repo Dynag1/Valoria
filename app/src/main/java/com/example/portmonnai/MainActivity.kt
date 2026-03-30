@@ -195,11 +195,6 @@ class MainActivity : ComponentActivity() {
 
                         composable("dashboard") {
                             DashboardScreen(
-                                totalValue = uiState.totalValue,
-                                totalProfit = uiState.totalProfit,
-                                totalProfitPercentage = uiState.totalProfitPercentage,
-                                totalProfitToday = uiState.totalProfitToday,
-                                totalProfitTodayPercentage = uiState.totalProfitTodayPercentage,
                                 assets = uiState.portfolioAssets,
                                 isRefreshing = uiState.isRefreshing,
                                 importMessage = uiState.importMessage,
@@ -210,9 +205,23 @@ class MainActivity : ComponentActivity() {
                                     viewModel.loadTransactionsForAsset(asset)
                                     navController.navigate("asset_detail")
                                 },
+                                onTrendsClick = {
+                                    viewModel.loadPortfolioTrends(uiState.trendsChartFilter)
+                                    navController.navigate("trends")
+                                },
                                 onDeleteAsset = { asset -> viewModel.deleteAsset(asset.asset.id) },
                                 onSettingsClick = { navController.navigate("settings") },
                                 onImportMessageDismissed = { viewModel.clearImportMessage() }
+                            )
+                        }
+
+                        composable("trends") {
+                            TrendsScreen(
+                                goldChartData = uiState.goldTrendsChartData,
+                                otherChartData = uiState.otherTrendsChartData,
+                                selectedFilter = uiState.trendsChartFilter,
+                                onFilterSelected = { viewModel.changeTrendsFilter(it) },
+                                onBack = { navController.popBackStack() }
                             )
                         }
 

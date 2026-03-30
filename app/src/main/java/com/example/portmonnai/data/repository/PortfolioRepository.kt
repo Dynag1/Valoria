@@ -416,6 +416,64 @@ class PortfolioRepository @Inject constructor(
         return finalResult
     }
 
+    suspend fun getPortfolioTrends(isGold: Boolean, startDateMs: Long): List<Pair<Long, Double>> = chartMutex.withLock {
+        val assets = getPortfolioAssetsOnce()
+        val goldTypes = listOf(AssetType.GOLD_BAR, AssetType.GOLD_INGOT, AssetType.GOLD_COIN, AssetType.METAL)
+        val filteredAssets = if (isGold) {
+            assets.filter { it.asset.type in goldTypes }
+        } else {
+            assets.filter { it.asset.type !in goldTypes }
+        }
+
+        if (filteredAssets.isEmpty()) return@withLock emptyList()
+
+        // Fetch ALL transactions once to have local quantity history
+        val allTransactions = portfolioDao.getAllTransactionsOnce()
+
+        // Fetch ALL historical prices in parallel
+        val assetChartResults = coroutineScope {
+            filteredAssets.map { portfolioAsset ->
+                async {
+                    val assetId = portfolioAsset.asset.id
+                    val symbol = portfolioAsset.asset.symbol
+                    val type = portfolioAsset.asset.type
+                    val prices = getAssetHistoricalPrices(assetId, symbol, type, startDateMs)
+                    assetId to prices
+                }
+            }.awaitAll().toMap()
+        }
+
+        // Collect all timestamps from all assets to build a common timeline
+        // On prend un sous-ensemble si trop de points (ex: Yahoo renvoie beaucoup de points sur 24h)
+        val allTimestamps = assetChartResults.values.flatten().map { it.first }.distinct().sorted()
+        if (allTimestamps.isEmpty()) return@withLock emptyList()
+
+        // Si le nombre de points est gigantesque, on réduit pour le rendu (e.g. max 200 points)
+        val stride = (allTimestamps.size / 200).coerceAtLeast(1)
+        val sampleTimestamps = allTimestamps.filterIndexed { index, _ -> index % stride == 0 || index == allTimestamps.size - 1 }
+
+        return@withLock sampleTimestamps.map { ts ->
+            var totalValueAtTs = 0.0
+            for (portfolioAsset in filteredAssets) {
+                val assetId = portfolioAsset.asset.id
+                val assetPrices = assetChartResults[assetId] ?: continue
+                
+                // On cherche le prix correspondant. plus efficace : sorted search ou finding closest.
+                // find closest ts before or equal to this ts
+                val priceAtTs = assetPrices.filter { it.first <= ts }.lastOrNull()?.second ?: assetPrices.firstOrNull()?.second ?: 0.0
+                
+                // Get the quantity at this timestamp based on transactions
+                val qtyAtTs = allTransactions
+                    .filter { it.assetId == assetId && it.date <= ts }
+                    .sumOf { if (it.type == TransactionType.BUY) it.quantity else -it.quantity }
+                    .coerceAtLeast(0.0)
+                
+                totalValueAtTs += qtyAtTs * priceAtTs
+            }
+            Pair(ts, totalValueAtTs)
+        }
+    }
+
 
     suspend fun addTransaction(transaction: Transaction) = syncMutex.withLock {
         portfolioDao.insertTransaction(

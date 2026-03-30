@@ -1,3 +1,9 @@
+## [0.1.4] - 2026-03-30
+### Ajouté
+- **Page de Tendances du Portefeuille** : Accès direct en cliquant sur le bandeau supérieur pour visualiser l'historique complet de la valeur du portefeuille.
+- **Graphiques d'Agrégation** : Deux graphiques distincts pour suivre séparément l'évolution des **Actifs financiers** et des **Métaux précieux**.
+- **Filtres Temporels Étendus** : Support de nouvelles périodes d'analyse (**3j, 15j, 6m**) disponibles sur tous les graphiques de l'application.
+
 ## [0.1.3] - 2026-03-30
 ### Ajouté
 - **Séparation de l'Or Physique** : Le bandeau du haut (App) et le **Widget** affichent désormais distinctement la valeur des actifs financiers et celle de l'or physique (pièces, lingotins, lingots), avec leurs variations respectives.

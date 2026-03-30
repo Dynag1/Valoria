@@ -382,8 +382,11 @@ fun PerformanceChartCard(
                 Text(
                     text = when(selectedFilter) {
                         ChartFilter.H24 -> "Dernières 24h"
+                        ChartFilter.D3 -> "3 derniers jours"
                         ChartFilter.D7 -> "7 derniers jours"
+                        ChartFilter.D15 -> "15 derniers jours"
                         ChartFilter.M1 -> "Dernier mois"
+                        ChartFilter.M6 -> "6 derniers mois"
                         ChartFilter.Y1 -> "Dernière année"
                         ChartFilter.Y5 -> "5 dernières années"
                         ChartFilter.ALL -> "Tout (depuis 2015)"

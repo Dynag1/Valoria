@@ -41,17 +41,13 @@ enum class AssetSortOrder {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
-    totalValue: Double,
-    totalProfit: Double,
-    totalProfitPercentage: Double,
-    totalProfitToday: Double,
-    totalProfitTodayPercentage: Double,
     assets: List<PortfolioAsset>,
     isRefreshing: Boolean,
     importMessage: String?,
     onRefresh: () -> Unit,
     onAddTransaction: () -> Unit,
     onAssetClick: (PortfolioAsset) -> Unit,
+    onTrendsClick: () -> Unit,
     onDeleteAsset: (PortfolioAsset) -> Unit,
     onSettingsClick: () -> Unit,
     onImportMessageDismissed: () -> Unit
@@ -173,7 +169,7 @@ fun DashboardScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 item {
-                    PortfolioHeader(assets = assets)
+                    PortfolioHeader(assets = assets, onTrendsClick = onTrendsClick)
                 }
 
                 item {
@@ -402,7 +398,7 @@ fun SwipeToDeleteAssetCard(
 }
 
 @Composable
-fun PortfolioHeader(assets: List<PortfolioAsset>) {
+fun PortfolioHeader(assets: List<PortfolioAsset>, onTrendsClick: () -> Unit) {
     val goldTypes = listOf(AssetType.GOLD_BAR, AssetType.GOLD_INGOT, AssetType.GOLD_COIN, AssetType.METAL)
     val goldAssets = assets.filter { it.asset.type in goldTypes }
     val otherAssets = assets.filter { it.asset.type !in goldTypes }
@@ -422,7 +418,7 @@ fun PortfolioHeader(assets: List<PortfolioAsset>) {
     val otherProfitTodayPercentage = if (otherTotalValue - otherProfitToday > 0) (otherProfitToday / (otherTotalValue - otherProfitToday)) * 100.0 else 0.0
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().clickable { onTrendsClick() },
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
