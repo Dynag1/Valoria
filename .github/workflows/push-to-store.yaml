@@ -68,5 +68,9 @@ jobs:
           git config user.name "App Github Action"
           git config user.email "actions@github.com"
           git add apks/ metadata/
-          git commit -m "Mise à jour automatique de l'APK Valoria" || echo "Rien à commiter"
-          git push
+          if git commit -m "Mise à jour automatique de l'APK Valoria"; then
+            git pull --rebase origin main
+            git push origin main
+          else
+            echo "Rien à commiter"
+          fi
