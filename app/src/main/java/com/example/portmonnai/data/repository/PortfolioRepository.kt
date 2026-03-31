@@ -179,41 +179,45 @@ class PortfolioRepository @Inject constructor(
             }
         } catch (e: Exception) { Log.e("PriceFetch", "Crypto failed", e) }
 
-        coroutineScope {
-            val metalQueries = listOf("XAUEUR=X", "XAGEUR=X", "GC=F", "SI=F")
-            metalQueries.map { ticker ->
-                async {
-                    try {
-                        val resp = yahooFinanceApi.getChartData(ticker)
-                        val meta = resp.chart.result?.firstOrNull()?.meta ?: return@async
-                        val price = meta.regularMarketPrice
-                        val prevClose = meta.chartPreviousClose
-                        val change = if (prevClose > 0) ((price - prevClose) / prevClose) * 100.0 else 0.0
-                        
-                        if (ticker.contains("EUR=X")) {
-                            if (ticker.startsWith("XAU")) {
-                                val gramPrice = price / 31.1035
-                                cachedPrices["gold_bar"] = PriceData(gramPrice * 1000.0, change)
-                                cachedPrices["gold_ingot"] = PriceData(gramPrice * 100.0, change)
-                                cachedPrices["gold_coin_napoleon"] = PriceData(gramPrice * 5.806, change)
-                                cachedPrices["pax-gold"] = PriceData(price, change)
-                            } else {
-                                cachedPrices["silver_bar"] = PriceData((price / 31.1035) * 1000.0, change) // Lingot 1kg
-                            }
-                        } else if (ticker == "GC=F" && !cachedPrices.containsKey("gold_bar")) {
-                            val gramPrice = (price / usdEurRate) / 31.1035
-                            cachedPrices["gold_bar"] = PriceData(gramPrice * 1000.0, change)
-                            cachedPrices["gold_ingot"] = PriceData(gramPrice * 100.0, change)
-                            cachedPrices["gold_coin_napoleon"] = PriceData(gramPrice * 5.806, change)
-                            cachedPrices["pax-gold"] = PriceData(price / usdEurRate, change)
-                        } else if (ticker == "SI=F" && !cachedPrices.containsKey("silver_bar")) {
-                            val gramPrice = (price / usdEurRate) / 31.1035
-                            cachedPrices["silver_bar"] = PriceData(gramPrice * 1000.0, change)
-                        }
-                    } catch (e: Exception) { }
-                }
-            }.awaitAll()
-        }
+        // Fetch metals via getQuotes() to get regularMarketChangePercent (reliable even when market closed)
+        try {
+            val metalResp = yahooFinanceApi.getQuotes("XAUEUR=X,XAGEUR=X,GC=F,SI=F")
+            val quotes = metalResp.quoteResponse.result ?: emptyList()
+            val quoteMap = quotes.associateBy { it.symbol }
+
+            val xauQuote = quoteMap["XAUEUR=X"]
+            val gcQuote  = quoteMap["GC=F"]
+            val xagQuote = quoteMap["XAGEUR=X"]
+            val siQuote  = quoteMap["SI=F"]
+
+            if (xauQuote != null) {
+                val price  = xauQuote.regularMarketPrice
+                val change = xauQuote.regularMarketChangePercent ?: 0.0
+                val gramPrice = price / 31.1035
+                cachedPrices["gold_bar"]           = PriceData(gramPrice * 1000.0, change)
+                cachedPrices["gold_ingot"]         = PriceData(gramPrice * 100.0,  change)
+                cachedPrices["gold_coin_napoleon"] = PriceData(gramPrice * 5.806,  change)
+                cachedPrices["pax-gold"]           = PriceData(price,              change)
+            } else if (gcQuote != null) {
+                val price  = gcQuote.regularMarketPrice / usdEurRate
+                val change = gcQuote.regularMarketChangePercent ?: 0.0
+                val gramPrice = price / 31.1035
+                cachedPrices["gold_bar"]           = PriceData(gramPrice * 1000.0, change)
+                cachedPrices["gold_ingot"]         = PriceData(gramPrice * 100.0,  change)
+                cachedPrices["gold_coin_napoleon"] = PriceData(gramPrice * 5.806,  change)
+                cachedPrices["pax-gold"]           = PriceData(price,              change)
+            }
+
+            if (xagQuote != null) {
+                val price  = xagQuote.regularMarketPrice
+                val change = xagQuote.regularMarketChangePercent ?: 0.0
+                cachedPrices["silver_bar"] = PriceData((price / 31.1035) * 1000.0, change)
+            } else if (siQuote != null) {
+                val price  = siQuote.regularMarketPrice / usdEurRate
+                val change = siQuote.regularMarketChangePercent ?: 0.0
+                cachedPrices["silver_bar"] = PriceData((price / 31.1035) * 1000.0, change)
+            }
+        } catch (e: Exception) { Log.e("PriceFetch", "Metals via getQuotes failed", e) }
 
         try {
             val allDbAssets = portfolioDao.getAllAssetsOnce()
@@ -224,15 +228,24 @@ class PortfolioRepository @Inject constructor(
                 .filter { it.symbol.isNotBlank() }
                 .distinctBy { it.symbol }
 
+            // Batch fetch stocks via getQuotes() for reliable regularMarketChangePercent
+            val symbols = stockAssets.map { it.symbol }.joinToString(",")
+            val stockQuoteMap = try {
+                val resp = yahooFinanceApi.getQuotes(symbols)
+                resp.quoteResponse.result?.associateBy { it.symbol } ?: emptyMap()
+            } catch (e: Exception) { emptyMap() }
+
             coroutineScope {
                 stockAssets.map { asset ->
                     async {
                         try {
+                            val quote = stockQuoteMap[asset.symbol]
                             val resp = yahooFinanceApi.getChartData(asset.symbol)
                             val meta = resp.chart.result?.firstOrNull()?.meta ?: return@async
                             var price = meta.regularMarketPrice
-                            val prevClose = meta.chartPreviousClose
-                            val change = if (prevClose > 0) ((price - prevClose) / prevClose) * 100.0 else 0.0
+                            // Prefer regularMarketChangePercent from getQuotes (reliable), fallback to chartPreviousClose calc
+                            val change = quote?.regularMarketChangePercent
+                                ?: if (meta.chartPreviousClose > 0) ((price - meta.chartPreviousClose) / meta.chartPreviousClose) * 100.0 else 0.0
                             
                             // Conversion multi-devises vers EUR
                             // EurUsdRate (EURUSD=X) est le nombre de dollars pour 1 Euro (ex: 1.08)

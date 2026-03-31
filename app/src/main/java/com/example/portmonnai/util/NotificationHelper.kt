@@ -61,9 +61,17 @@ class NotificationHelper(private val context: Context) {
             .setColor(color)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
 
-        with(NotificationManagerCompat.from(context)) {
-            // Use asset hash code as notification id to allow multiple alerts for different assets
-            notify(assetName.hashCode(), builder.build())
+        val notifManager = NotificationManagerCompat.from(context)
+        // On Android 13+, POST_NOTIFICATIONS permission is required — skip silently if not granted
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.POST_NOTIFICATIONS
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            android.util.Log.w("NotificationHelper", "POST_NOTIFICATIONS not granted — skipping alert for $assetName")
+            return
         }
+        // Use asset hash code as notification id to allow multiple alerts for different assets
+        notifManager.notify(assetName.hashCode(), builder.build())
     }
 }
