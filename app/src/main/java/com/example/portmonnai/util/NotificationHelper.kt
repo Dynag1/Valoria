@@ -50,10 +50,11 @@ class NotificationHelper(private val context: Context) {
         val color = if (change24h > 0) 0xFF4CAF50.toInt() else 0xFFF44336.toInt()
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground) // Fallback to app icon
+            .setSmallIcon(android.R.drawable.ic_dialog_info) 
             .setContentTitle("Mouvement important : $assetName")
             .setContentText("$sign${String.format("%.2f", change24h)}% aujourd'hui. Prix : €${String.format("%.2f", currentPrice)}")
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)

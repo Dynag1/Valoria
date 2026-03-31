@@ -1,3 +1,11 @@
+## [0.1.6] - 2026-03-31
+### Ajouté
+- **Points d'achats agrégés** : Marqueurs d'achats/ventes désormais affichés sur les graphiques de Tendances globales.
+ 
+### Corrigé
+- **Popup de variations de prix** : Augmentation de la priorité des notifications pour garantir l'affichage en bannière sur Android 13+.
+- **Seuil d'alerte** : Ajustement de la sensibilité (>2.95% instead of 3.0%) et réduction de l'intervalle de répétition à 6h.
+
 ## [0.1.5] - 2026-03-31
 ### Ajouté
 - **Page de Tendances du Portefeuille** : Accès direct en cliquant sur le bandeau supérieur pour visualiser l'historique complet de la valeur du portefeuille.

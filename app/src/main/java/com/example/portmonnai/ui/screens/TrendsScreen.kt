@@ -21,6 +21,8 @@ import com.example.portmonnai.ui.viewmodel.ChartFilter
 fun TrendsScreen(
     goldChartData: List<Pair<Long, Double>>?,
     otherChartData: List<Pair<Long, Double>>?,
+    goldTransactions: List<Transaction>,
+    otherTransactions: List<Transaction>,
     selectedFilter: ChartFilter,
     onFilterSelected: (ChartFilter) -> Unit,
     onBack: () -> Unit
@@ -58,6 +60,7 @@ fun TrendsScreen(
                 PortfolioTrendCard(
                     title = "Actifs Financiers",
                     data = otherChartData,
+                    transactions = otherTransactions,
                     subtitle = "Actions, ETFs, Cryptos..."
                 )
             }
@@ -66,6 +69,7 @@ fun TrendsScreen(
                 PortfolioTrendCard(
                     title = "Or & Métaux Physiques",
                     data = goldChartData,
+                    transactions = goldTransactions,
                     subtitle = "Pièces, Lingots, Lingotins"
                 )
             }
@@ -118,6 +122,7 @@ fun TrendsFilterSection(
 fun PortfolioTrendCard(
     title: String,
     data: List<Pair<Long, Double>>?,
+    transactions: List<Transaction>,
     subtitle: String
 ) {
     Card(
@@ -152,7 +157,7 @@ fun PortfolioTrendCard(
                 // Note: On pourrait extraire PerformanceChart comme composant commun.
                 // Pour l'instant, je vais l'implémenter ici de façon compacte.
                 Box(modifier = Modifier.fillMaxWidth().height(180.dp)) {
-                    SimpleTrendChart(data)
+                    SimpleTrendChart(data, transactions)
                 }
             }
         }
@@ -160,12 +165,12 @@ fun PortfolioTrendCard(
 }
 
 @Composable
-fun SimpleTrendChart(data: List<Pair<Long, Double>>) {
+fun SimpleTrendChart(data: List<Pair<Long, Double>>, transactions: List<Transaction>) {
     // On réutilise la logique de AssetDetailScreen ici mais adaptée au contexte "Trends"
-    // Pour ne pas surcharger, on appelle une version allégée du graphique
+    // On affiche désormais les points de transaction agrégés sur la courbe
     PerformanceChartCard(
         data = data,
-        transactions = emptyList(), // Pas de points de transaction sur le global par défaut
+        transactions = transactions, 
         selectedFilter = ChartFilter.H24, // Non utilisé ici pour le titre
         onFilterSelected = {} 
     )

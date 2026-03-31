@@ -188,14 +188,37 @@ class PortfolioViewModel @Inject constructor(
                 ChartFilter.ALL -> 0L
             }
             
-            // On charge les deux en parallèle
-            launch {
-                val goldData = repository.getPortfolioTrends(isGold = true, startDateMs = startDateMs)
-                _uiState.update { it.copy(goldTrendsChartData = goldData) }
-            }
             launch {
                 val otherData = repository.getPortfolioTrends(isGold = false, startDateMs = startDateMs)
-                _uiState.update { it.copy(otherTrendsChartData = otherData) }
+                val allAssets = repository.getPortfolioAssetsOnce()
+                val goldTypes = listOf(AssetType.GOLD_BAR, AssetType.GOLD_INGOT, AssetType.GOLD_COIN, AssetType.METAL)
+                val otherAssetsIds = allAssets.filter { it.asset.type !in goldTypes }.map { it.asset.id }
+                
+                val otherTxs = mutableListOf<Transaction>()
+                otherAssetsIds.forEach { id ->
+                    repository.getTransactionsForAsset(id).first().let { otherTxs.addAll(it) }
+                }
+                
+                _uiState.update { it.copy(
+                    otherTrendsChartData = otherData,
+                    otherTransactions = otherTxs
+                )}
+            }
+            launch {
+                val goldData = repository.getPortfolioTrends(isGold = true, startDateMs = startDateMs)
+                val allAssets = repository.getPortfolioAssetsOnce()
+                val goldTypes = listOf(AssetType.GOLD_BAR, AssetType.GOLD_INGOT, AssetType.GOLD_COIN, AssetType.METAL)
+                val goldAssetsIds = allAssets.filter { it.asset.type in goldTypes }.map { it.asset.id }
+                
+                val goldTxs = mutableListOf<Transaction>()
+                goldAssetsIds.forEach { id ->
+                    repository.getTransactionsForAsset(id).first().let { goldTxs.addAll(it) }
+                }
+                
+                _uiState.update { it.copy(
+                    goldTrendsChartData = goldData,
+                    goldTransactions = goldTxs
+                )}
             }
         }
     }
@@ -353,6 +376,8 @@ data class PortfolioUiState(
     val selectedAssetId: String? = null,
     val goldTrendsChartData: List<Pair<Long, Double>>? = null,
     val otherTrendsChartData: List<Pair<Long, Double>>? = null,
+    val goldTransactions: List<Transaction> = emptyList(),
+    val otherTransactions: List<Transaction> = emptyList(),
     val trendsChartFilter: ChartFilter = ChartFilter.H24,
     val importMessage: String? = null,
     val notificationsEnabled: Boolean = true,

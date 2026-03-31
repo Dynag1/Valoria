@@ -21,10 +21,10 @@ class PriceAlertWorker @AssistedInject constructor(
 
     companion object {
         private const val PREFS_NAME = "price_alerts_prefs"
-        private const val ALERT_THRESHOLD = 3.0
+        private const val ALERT_THRESHOLD = 2.95
         private const val NOTIFIED_PREFIX = "notified_"
         private const val ALERTS_ENABLED_KEY = "alerts_enabled"
-        private const val NOTIFICATION_MIN_INTERVAL_MS = 18 * 60 * 60 * 1000L // 18 hours to avoid repeat notification on same day
+        private const val NOTIFICATION_MIN_INTERVAL_MS = 6 * 60 * 60 * 1000L // 6h min interval to avoid repeats
     }
 
     override suspend fun doWork(): Result {

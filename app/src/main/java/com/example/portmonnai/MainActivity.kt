@@ -219,6 +219,8 @@ class MainActivity : ComponentActivity() {
                             TrendsScreen(
                                 goldChartData = uiState.goldTrendsChartData,
                                 otherChartData = uiState.otherTrendsChartData,
+                                goldTransactions = uiState.goldTransactions,
+                                otherTransactions = uiState.otherTransactions,
                                 selectedFilter = uiState.trendsChartFilter,
                                 onFilterSelected = { viewModel.changeTrendsFilter(it) },
                                 onBack = { navController.popBackStack() }
