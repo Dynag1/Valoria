@@ -4,6 +4,8 @@ import androidx.room.*
 import com.example.portmonnai.domain.model.AssetType
 import com.example.portmonnai.domain.model.TransactionType
 import kotlinx.coroutines.flow.Flow
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Entity(tableName = "assets")
 data class AssetEntity(
@@ -74,7 +76,16 @@ interface PortfolioDao {
     suspend fun deleteAllTransactions()
 }
 
-@Database(entities = [AssetEntity::class, TransactionEntity::class], version = 4, exportSchema = false)
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Add index on assetId (added in v5 without a version bump — fixed here)
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS index_transactions_assetId ON transactions (assetId)"
+        )
+    }
+}
+
+@Database(entities = [AssetEntity::class, TransactionEntity::class], version = 5, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun portfolioDao(): PortfolioDao
 }

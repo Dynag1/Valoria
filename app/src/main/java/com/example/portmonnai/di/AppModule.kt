@@ -3,6 +3,7 @@ package com.example.portmonnai.di
 import android.content.Context
 import androidx.room.Room
 import com.example.portmonnai.data.local.AppDatabase
+import com.example.portmonnai.data.local.MIGRATION_4_5
 import com.example.portmonnai.data.local.PortfolioDao
 import com.example.portmonnai.data.remote.CoinGeckoApi
 import dagger.Module
@@ -25,7 +26,7 @@ object AppModule {
             context,
             AppDatabase::class.java,
             "portmonnai_db"
-        ).fallbackToDestructiveMigration().build()
+        ).fallbackToDestructiveMigration().addMigrations(MIGRATION_4_5).build()
     }
 
     @Provides
