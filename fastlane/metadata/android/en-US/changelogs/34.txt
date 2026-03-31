@@ -1,0 +1,3 @@
+- Portfolio Trends Page: Direct access by clicking the top banner to view the full history of the portfolio value.
+- Aggregation Charts: Two separate charts to track the evolution of Financial Assets and Precious Metals separately.
+- Extended Time Filters: Support for new analysis periods (3d, 15d, 6m) available on all charts in the application.

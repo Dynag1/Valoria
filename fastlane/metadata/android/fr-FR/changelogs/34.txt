@@ -1,0 +1,3 @@
+- Page de Tendances du Portefeuille : Accès direct en cliquant sur le bandeau supérieur pour visualiser l'historique complet de la valeur du portefeuille.
+- Graphiques d'Agrégation : Deux graphiques distincts pour suivre séparément l'évolution des Actifs financiers et des Métaux précieux.
+- Filtres Temporels Étendus : Support de nouvelles périodes d'analyse (3j, 15j, 6m) disponibles sur tous les graphiques de l'application.

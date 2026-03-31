@@ -14,8 +14,8 @@ android {
         applicationId = "co.dynag.valoria"
         minSdk = 26
         targetSdk = 35
-        versionCode = 30
-        versionName = "0.1.2"
+        versionCode = 34
+        versionName = "0.1.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

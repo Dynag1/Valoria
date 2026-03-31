@@ -1,4 +1,4 @@
-## [0.1.4] - 2026-03-30
+## [0.1.5] - 2026-03-31
 ### Ajouté
 - **Page de Tendances du Portefeuille** : Accès direct en cliquant sur le bandeau supérieur pour visualiser l'historique complet de la valeur du portefeuille.
 - **Graphiques d'Agrégation** : Deux graphiques distincts pour suivre séparément l'évolution des **Actifs financiers** et des **Métaux précieux**.
