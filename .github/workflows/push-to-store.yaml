@@ -49,28 +49,32 @@ jobs:
 
       - name: Push APK and Metadata to Store
         run: |
-          # ⚠️ REMPLACEZ par le vrai Package ID de Valoria !
           PKG_ID="co.dynag.valoria"
-          
+
           mkdir -p store-repo/apks/$PKG_ID
           mkdir -p store-repo/metadata/$PKG_ID/en-US
           mkdir -p store-repo/metadata/$PKG_ID/fr-FR
-          
-          # Copie des APK (renommé pour éviter les collisions F-Droid)
+
           cp app/build/outputs/apk/release/*.apk store-repo/apks/$PKG_ID/valoria-release.apk
-          
-          # Copie des métadonnées Fastlane (facultatif si inexistant)
+
           cp -r fastlane/metadata/android/fr-FR/* store-repo/metadata/$PKG_ID/fr-FR/ 2>/dev/null || true
           cp -r fastlane/metadata/android/en-US/* store-repo/metadata/$PKG_ID/en-US/ 2>/dev/null || true
-          
-          # Push sur le magasin central
+
           cd store-repo
           git config user.name "App Github Action"
           git config user.email "actions@github.com"
+
+          # Pull d'abord pour éviter les conflits de push
+          git pull --rebase origin main
+
           git add apks/ metadata/
           if git commit -m "Mise à jour automatique de l'APK Valoria"; then
-            git pull --rebase origin main
-            git push origin main
+            # Retry loop en cas de race condition
+            for i in 1 2 3; do
+              git pull --rebase origin main && git push origin main && break
+              echo "Push attempt $i failed, retrying in 5s..."
+              sleep 5
+            done
           else
             echo "Rien à commiter"
           fi
