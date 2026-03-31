@@ -14,6 +14,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.portmonnai.ui.theme.SoberBlue
+import com.example.portmonnai.domain.model.Transaction
 import com.example.portmonnai.ui.viewmodel.ChartFilter
 
 @OptIn(ExperimentalMaterial3Api::class)
